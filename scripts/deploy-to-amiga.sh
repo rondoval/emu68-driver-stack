@@ -3,14 +3,14 @@ set -euo pipefail
 
 AE_EXE=${AE_EXE:-"/mnt/c/Program Files/Cloanto/Amiga Explorer/Windows/ae.exe"}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-SDK_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
-INSTALL_DIR=${INSTALL_DIR:-"${SDK_ROOT}/install"}
+STACK_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+INSTALL_DIR=${INSTALL_DIR:-"${STACK_ROOT}/install"}
 
 usage() {
 	cat <<'EOF'
 Usage: deploy-to-amiga.sh [--install-dir PATH] [--dry-run]
 
-Copies installed SDK runtime binaries to the Amiga using ae.exe.
+Copies installed driver-stack runtime binaries to the Amiga using ae.exe.
 
 Source directories mapped automatically:
   install/LIBS -> LIBS:
@@ -19,7 +19,7 @@ Source directories mapped automatically:
 
 Environment overrides:
   AE_EXE       Path to ae.exe
-  INSTALL_DIR  SDK install directory
+	INSTALL_DIR  Driver-stack install directory
 EOF
 }
 

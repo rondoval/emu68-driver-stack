@@ -1,17 +1,18 @@
-# emu68-sdk
+# emu68-driver-stack
 
 Top-level superbuild for the Emu68 AmigaOS driver stack.
 
-This project always builds the full stack into one SDK prefix:
+This project always builds the full stack into one driver-stack prefix:
 
 - `devicetree.resource`
+- `mailbox.resource`
 - `emu68-common`
 - `emu68-gic400-library`
 - `emu68-pcie-library`
 - `emu68-xhci-driver`
 - `emu68-genet-driver`
 
-By default the SDK build happens in a `build/` subdirectory and the installed SDK contents go into an `install/` subdirectory, so the generated files land under:
+By default the driver-stack build happens in a `build/` subdirectory and the installed output goes into an `install/` subdirectory, so the generated files land under:
 
 - `install/Developer/`
 - `install/include/`
@@ -32,13 +33,13 @@ cmake -S . -B build
 cmake --build build
 ```
 
-That configures and installs every component into this SDK directory.
+That configures and installs every component into this driver-stack directory.
 
 The component build trees are created under `build/` as part of the superbuild.
 
-If you want the SDK output somewhere else:
+If you want the driver-stack output somewhere else:
 
 ```sh
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/path/to/emu68-sdk
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/path/to/emu68-driver-stack
 cmake --build build
 ```
