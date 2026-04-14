@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
+
 
 AE_EXE=${AE_EXE:-"/mnt/c/Program Files/Cloanto/Amiga Explorer/Windows/ae.exe"}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -65,7 +66,7 @@ run_ae() {
 		done
 		printf '\n'
 	else
-		"$AE_EXE" "$@"
+		"$AE_EXE" "$@" </dev/null
 	fi
 }
 
@@ -77,7 +78,11 @@ copy_tree() {
 
 	while IFS= read -r -d '' file; do
 		local rel_path=${file#"$src_root/"}
-		run_ae Copy "$file" "${amiga_root}${rel_path}" /Y
+		echo "Copying $file -> ${amiga_root}${rel_path}"
+		if ! run_ae Copy "$file" "${amiga_root}${rel_path}" /Y; then
+			echo "ERROR: Failed to copy $file -> ${amiga_root}${rel_path}" >&2
+			COPY_ERRORS=1
+		fi
 	done < <(find "$src_root" -type f -print0 | sort -z)
 }
 
