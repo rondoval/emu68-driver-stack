@@ -1,0 +1,21 @@
+[submodule "components/devicetree.resource"]
+	path = components/devicetree.resource
+	url = https://github.com/rondoval/devicetree.resource.git
+[submodule "components/mailbox.resource"]
+	path = components/mailbox.resource
+	url = https://github.com/rondoval/mailbox.resource.git
+[submodule "components/emu68-common"]
+	path = components/emu68-common
+	url = https://github.com/rondoval/emu68-common.git
+[submodule "components/emu68-gic400-library"]
+	path = components/emu68-gic400-library
+	url = https://github.com/rondoval/emu68-gic400-library.git
+[submodule "components/emu68-pcie-library"]
+	path = components/emu68-pcie-library
+	url = https://github.com/rondoval/emu68-pcie-library.git
+[submodule "components/emu68-xhci-driver"]
+	path = components/emu68-xhci-driver
+	url = https://github.com/rondoval/emu68-xhci-driver.git
+[submodule "components/emu68-genet-driver"]
+	path = components/emu68-genet-driver
+	url = https://github.com/rondoval/emu68-genet-driver.git
