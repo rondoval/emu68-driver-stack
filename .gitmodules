@@ -19,3 +19,6 @@
 [submodule "components/emu68-genet-driver"]
 	path = components/emu68-genet-driver
 	url = https://github.com/rondoval/emu68-genet-driver.git
+[submodule "components/emu68-nvme-driver"]
+	path = components/emu68-nvme-driver
+	url = https://github.com/rondoval/emu68-nvme-driver
