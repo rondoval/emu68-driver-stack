@@ -1,0 +1,62 @@
+emu68 Driver Stack 1.0.0
+========================
+AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
+
+
+COMPONENTS
+----------
+
+gic400.library (LIBS:)
+  ARM GIC-400 interrupt controller library.
+  Required by xhci.device, genet.device, and bcmpcie.library.
+
+bcmpcie.library (LIBS:)
+  BCM2711 PCIe bus library. Initialises the PCIe controller, enumerates
+  devices, allocates BARs, and provides the driver API.
+
+xhci.device (DEVS:USBHardware/)
+  USB 3.0 host controller driver for the VIA VL805 chip present on every
+  Raspberry Pi 4 board. Works with the Poseidon USB stack.
+
+genet.device (DEVS:Networks/)
+  Gigabit Ethernet SANA-II driver for the Genet controller built into
+  the Raspberry Pi 4 / CM4.
+
+openpci.library (LIBS:) [optional]
+  Compatibility shim for software that calls OpenLibrary("openpci.library").
+  Forwards calls to bcmpcie.library. Do NOT install if you have a real PCI
+  expansion board (Mediator, Prometheus, G-REX, ...).
+
+lspci (C:) [optional]
+  CLI tool that lists all devices on the PCIe bus. Run from a Shell to
+  verify the PCIe link is up and devices are enumerated correctly.
+
+
+INSTALLATION
+------------
+
+Run the included 'Install' script using the Commodore Installer tool
+(v43.3 or later, included with AmigaOS 3.1.4+).
+
+Manual installation: copy files to the destinations listed above and reboot.
+
+
+REQUIREMENTS
+------------
+
+  - Emu68 (https://github.com/michalsc/Emu68) on Raspberry Pi 4 or CM4
+  - AmigaOS 3.x
+  - USB stack (for xhci.device)
+  - A TCP/IP stack such as Roadshow (for genet.device)
+
+
+SOURCE CODE
+-----------
+
+  https://github.com/rondoval/emu68-driver-stack
+
+
+LICENSE
+-------
+
+See individual component repositories for license information.

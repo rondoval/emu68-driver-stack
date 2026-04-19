@@ -1,0 +1,36 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: amigadev/crosstools:m68k-amigaos
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Upload runtime artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: emu68-drivers
+          path: |
+            install/LIBS
+            install/DEVS
+            install/C
+          if-no-files-found: error

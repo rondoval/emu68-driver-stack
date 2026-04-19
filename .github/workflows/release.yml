@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container:
+      image: amigadev/crosstools:m68k-amigaos
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install lhasa
+        run: apt-get update -qq && apt-get install -y --no-install-recommends lhasa
+
+      - name: Configure
+        run: cmake -S . -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: cmake --build build --target package
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "emu68 Driver Stack ${{ github.ref_name }}"
+          files: build/package/emu68-drivers-${{ steps.version.outputs.version }}.zip
+          generate_release_notes: true

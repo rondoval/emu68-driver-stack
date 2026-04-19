@@ -1,0 +1,222 @@
+; emu68 Driver Stack Installer
+; Requires Commodore Installer v43.3 or later.
+; SPDX-License-Identifier: GPL-2.0+
+
+(set #emu68-version "1.0.0")
+
+; ---------------------------------------------------------------------------
+; Welcome
+; ---------------------------------------------------------------------------
+(message
+    (cat
+        "Welcome to the emu68 Driver Stack installer.\n\n"
+        "This package installs AmigaOS drivers for Raspberry Pi 4 / CM4\n"
+        "running Emu68:\n\n"
+        "  \x95 gic400.library  \x97 ARM GIC-400 interrupt controller\n"
+        "  \x95 bcmpcie.library  \x97 BCM2711 PCIe bus library\n"
+        "  \x95 xhci.device     \x97 USB 3.0 (VIA VL805)\n"
+        "  \x95 genet.device    \x97 Gigabit Ethernet\n"
+        "  \x95 openpci.library \x97 PCIe Compatibility shim (optional)\n"
+        "  \x95 lspci           \x97 PCIe diagnostic tool (optional)\n\n"
+        "Version: " #emu68-version
+    )
+    (all)
+)
+
+; ---------------------------------------------------------------------------
+; Component selection
+; ---------------------------------------------------------------------------
+
+; gic400.library — required by everything else
+(set #install-gic400
+    (askbool
+        (prompt
+            (cat
+                "Install gic400.library?\n\n"
+                "This library manages the ARM GIC-400 interrupt controller.\n"
+                "It is required by xhci.device, genet.device, and bcmpcie.library."
+            )
+        )
+        (help
+            "gic400.library must be present in LIBS: for the PCIe and\n"
+            "network drivers to function."
+        )
+        (default 1)
+    )
+)
+
+; bcmpcie.library
+(set #install-bcmpcie
+    (askbool
+        (prompt
+            (cat
+                "Install bcmpcie.library?\n\n"
+                "Provides access to the BCM2711 PCIe bus.\n"
+                "Required by xhci.device and any future PCIe driver."
+            )
+        )
+        (help
+            "bcmpcie.library initialises the PCIe controller, enumerates\n"
+            "devices, and provides the driver API. Install it unless you\n"
+            "are certain no PCIe drivers are needed."
+        )
+        (default 1)
+    )
+)
+
+; xhci.device
+(set #install-xhci
+    (askbool
+        (prompt
+            (cat
+                "Install xhci.device?\n\n"
+                "USB 3.0 host controller driver for the VIA VL805 chip\n"
+                "found on every Raspberry Pi 4 board."
+            )
+        )
+        (help
+            "xhci.device provides USB support via the Poseidon USB stack.\n"
+            "It requires bcmpcie.library and gic400.library."
+        )
+        (default 1)
+    )
+)
+
+; genet.device
+(set #install-genet
+    (askbool
+        (prompt
+            (cat
+                "Install genet.device?\n\n"
+                "Gigabit Ethernet SANA-II driver for the BCM54213 controller\n"
+                "built into the Raspberry Pi 4 / CM4."
+            )
+        )
+        (help
+            "genet.device provides Ethernet via the standard SANA-II interface.\n"
+            "It requires gic400.library."
+        )
+        (default 1)
+    )
+)
+
+; openpci.library — optional, off by default
+(set #install-openpci
+    (askbool
+        (prompt
+            (cat
+                "Install openpci.library? (optional)\n\n"
+                "A compatibility shim for software that opens 'openpci.library'\n"
+                "by name. It forwards calls to bcmpcie.library.\n\n"
+                "WARNING: Do NOT install if you have a real PCI expansion board\n"
+                "(Mediator, Prometheus, G-REX, ...) \x97 the name clash will\n"
+                "break that board's own driver."
+            )
+        )
+        (help
+            "openpci.library is only needed for legacy software that calls\n"
+            "OpenLibrary(\"openpci.library\", ...) and expects the classic\n"
+            "openpci API. New software should use bcmpcie.library directly."
+        )
+        (default 0)
+    )
+)
+
+; lspci
+(set #install-lspci
+    (askbool
+        (prompt
+            (cat
+                "Install lspci? (optional)\n\n"
+                "A CLI diagnostic tool that lists all devices on the PCIe bus.\n"
+                "Useful for verifying that the PCIe link is up and devices\n"
+                "are enumerated correctly.\n\n"
+                "Installed to C:lspci."
+            )
+        )
+        (help
+            "Run 'lspci' from a Shell to see connected PCIe devices.\n"
+            "Requires bcmpcie.library."
+        )
+        (default 1)
+    )
+)
+
+; ---------------------------------------------------------------------------
+; Installation
+; ---------------------------------------------------------------------------
+
+(if (= #install-gic400 1)
+    (
+        (copyfiles
+            (source "LIBS/gic400.library")
+            (dest   "LIBS:")
+            (prompt "Copying gic400.library...")
+        )
+    )
+)
+
+(if (= #install-bcmpcie 1)
+    (
+        (copyfiles
+            (source "LIBS/bcmpcie.library")
+            (dest   "LIBS:")
+            (prompt "Copying bcmpcie.library...")
+        )
+    )
+)
+
+(if (= #install-xhci 1)
+    (
+        (makedir "DEVS:USBHardware")
+        (copyfiles
+            (source "DEVS/USBHardware/xhci.device")
+            (dest   "DEVS:USBHardware/")
+            (prompt "Copying xhci.device...")
+        )
+    )
+)
+
+(if (= #install-genet 1)
+    (
+        (makedir "DEVS:Networks")
+        (copyfiles
+            (source "DEVS/Networks/genet.device")
+            (dest   "DEVS:Networks/")
+            (prompt "Copying genet.device...")
+        )
+    )
+)
+
+(if (= #install-openpci 1)
+    (
+        (copyfiles
+            (source "LIBS/openpci.library")
+            (dest   "LIBS:")
+            (prompt "Copying openpci.library...")
+        )
+    )
+)
+
+(if (= #install-lspci 1)
+    (
+        (copyfiles
+            (source "C/lspci")
+            (dest   "C:")
+            (prompt "Copying lspci...")
+        )
+    )
+)
+
+; ---------------------------------------------------------------------------
+; Done
+; ---------------------------------------------------------------------------
+(message
+    (cat
+        "Installation complete.\n\n"
+        "The emu68 drivers are now installed. If your Amiga is already\n"
+        "running, a reboot is required for the new drivers to take effect.\n\n"
+        "See the ReadMe file for usage notes and version history."
+    )
+    (all)
+)

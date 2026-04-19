@@ -2,7 +2,10 @@
 
 Top-level superbuild for the Emu68 AmigaOS driver stack.
 
-This project always builds the full stack into one driver-stack prefix:
+This project builds the full stack into one driver-stack prefix.  All component
+repositories are included as git submodules under `components/`.
+
+## Components
 
 - `devicetree.resource`
 - `mailbox.resource`
@@ -12,34 +15,79 @@ This project always builds the full stack into one driver-stack prefix:
 - `emu68-xhci-driver`
 - `emu68-genet-driver`
 
-By default the driver-stack build happens in a `build/` subdirectory and the installed output goes into an `install/` subdirectory, so the generated files land under:
+## Output layout
 
-- `install/Developer/`
-- `install/include/`
-- `install/lib/`
-- `install/LIBS/`
-- `install/DEVS/`
-- `install/C/`
+| Path | Contents |
+|---|---|
+| `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library` |
+| `install/DEVS/USBHardware/` | `xhci.device` |
+| `install/DEVS/Networks/` | `genet.device` |
+| `install/C/` | `lspci` |
+| `install/Developer/` | Public headers and SFD files |
+| `install/include/`, `install/lib/` | Build-time headers and static libraries |
 
 ## Assumptions
 
-- all component repositories live next to this directory
 - Bebbo's AmigaOS cross-toolchain is installed under `/opt/m68k-amigaos`
 
 ## Building
 
+### Fresh clone
+
 ```sh
+git clone --recurse-submodules https://github.com/rondoval/emu68-driver-stack.git
+cd emu68-driver-stack
 cmake -S . -B build
 cmake --build build
 ```
 
-That configures and installs every component into this driver-stack directory.
-
-The component build trees are created under `build/` as part of the superbuild.
-
-If you want the driver-stack output somewhere else:
+### Existing clone without submodules
 
 ```sh
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/path/to/emu68-driver-stack
+git submodule update --init --recursive
+cmake -S . -B build
+cmake --build build
+```
+
+## Local development — working on an individual component
+
+Override any component's source directory to point to your own checkout:
+
+```sh
+cmake -S . -B build -D EMU68_XHCI_SOURCE_DIR=/home/user/emu68-xhci-driver
+cmake --build build
+```
+
+The override is cached in `build/CMakeCache.txt` and applies to all subsequent
+builds until cleared.  The submodule under `components/` is ignored for any
+overridden component.  All other overridable variables follow the same
+`<COMPONENT>_SOURCE_DIR` naming pattern (see `CMakeLists.txt`).
+
+## Versioning
+
+Component submodule pointers in this repository always track a release tag of
+each component.  To update a component to a new release:
+
+```sh
+git -C components/emu68-xhci-driver checkout v4.1.0
+git add components/emu68-xhci-driver
+git commit -m "Bump emu68-xhci-driver to v4.1.0"
+```
+
+## Creating a release package
+
+Requires `lhasa` (`apt install lhasa` or equivalent):
+
+```sh
+cmake --build build --target package
+```
+
+This produces `build/package/emu68-drivers-<version>.lha` containing the
+runtime binaries and the Commodore Installer script.
+
+## Custom install prefix
+
+```sh
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/path/to/prefix
 cmake --build build
 ```
