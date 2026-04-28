@@ -3,10 +3,12 @@ project(emu68_driver_stack VERSION 1.0.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
+# Set default install prefix
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/install" CACHE PATH "Driver stack install path" FORCE)
 endif()
 
+# Toolchain and toolchain bin dir
 set(EMU68_DRIVER_STACK_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake" CACHE FILEPATH "Toolchain file used for all component builds")
 set(EMU68_TOOLCHAIN_BIN_DIR "/opt/m68k-amigaos/bin" CACHE PATH "Directory added to PATH for component builds")
 
@@ -19,7 +21,9 @@ set(EMU68_GIC400_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68
 set(EMU68_PCIE_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-pcie-library"  CACHE PATH "Path to emu68-pcie-library sources")
 set(EMU68_XHCI_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver"   CACHE PATH "Path to emu68-xhci-driver sources")
 set(EMU68_GENET_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver"  CACHE PATH "Path to emu68-genet-driver sources")
+set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
 
+# Validate required paths
 foreach(required_path
     EMU68_DRIVER_STACK_TOOLCHAIN_FILE
     DEVICETREE_RESOURCE_SOURCE_DIR
@@ -28,7 +32,8 @@ foreach(required_path
     EMU68_GIC400_SOURCE_DIR
     EMU68_PCIE_SOURCE_DIR
     EMU68_XHCI_SOURCE_DIR
-    EMU68_GENET_SOURCE_DIR)
+    EMU68_GENET_SOURCE_DIR
+    EMU68_NVME_SOURCE_DIR)
     if(NOT EXISTS "${${required_path}}")
         message(FATAL_ERROR
             "Required path does not exist: ${required_path}='${${required_path}}'\n"
@@ -38,10 +43,12 @@ foreach(required_path
     endif()
 endforeach()
 
+# Validate toolchain bin dir
 if(NOT EXISTS "${EMU68_TOOLCHAIN_BIN_DIR}")
     message(FATAL_ERROR "Toolchain bin directory does not exist: EMU68_TOOLCHAIN_BIN_DIR='${EMU68_TOOLCHAIN_BIN_DIR}'")
 endif()
 
+# Function to add stack projects
 function(add_stack_project target source_dir)
     set(options)
     set(oneValueArgs)
@@ -68,6 +75,7 @@ function(add_stack_project target source_dir)
     )
 endfunction()
 
+# Add all stack projects
 add_stack_project(devicetree.resource "${DEVICETREE_RESOURCE_SOURCE_DIR}")
 add_stack_project(mailbox.resource "${MAILBOX_RESOURCE_SOURCE_DIR}" DEPENDS devicetree.resource)
 add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource)
@@ -75,6 +83,7 @@ add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devi
 add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library)
 add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
+add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
 
 add_custom_target(stack ALL
     DEPENDS
@@ -85,6 +94,7 @@ add_custom_target(stack ALL
         emu68-pcie-library
         emu68-xhci-driver
         emu68-genet-driver
+        emu68-nvme-driver
 )
 
 # ---------------------------------------------------------------------------
