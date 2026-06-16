@@ -14,15 +14,17 @@ repositories are included as git submodules under `components/`.
 - `emu68-pcie-library`
 - `emu68-xhci-driver`
 - `emu68-genet-driver`
+- `emu68-nvme-driver`
 
 ## Output layout
 
 | Path | Contents |
 |---|---|
 | `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library` |
+| `install/DEVS/` | `nvme.device` |
 | `install/DEVS/USBHardware/` | `xhci.device` |
 | `install/DEVS/Networks/` | `genet.device` |
-| `install/C/` | `lspci` |
+| `install/C/` | `lspci`, `nvmeadm`, `nvmeinfo`, `genet-stats` |
 | `install/Developer/` | Public headers and SFD files |
 | `install/include/`, `install/lib/` | Build-time headers and static libraries |
 
@@ -76,14 +78,15 @@ git commit -m "Bump emu68-xhci-driver to v4.1.0"
 
 ## Creating a release package
 
-Requires `lhasa` (`apt install lhasa` or equivalent):
+No external archiver is required — the target uses CMake's built-in `tar`:
 
 ```sh
 cmake --build build --target package
 ```
 
-This produces `build/package/emu68-drivers-<version>.lha` containing the
-runtime binaries and the Commodore Installer script.
+This produces `build/package/emu68-drivers-<version>.zip` containing the runtime
+binaries (`LIBS/`, `DEVS/`, `C/`) alongside the Commodore Installer script, so
+the installer can be run directly from the unpacked archive.
 
 ## Custom install prefix
 

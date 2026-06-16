@@ -8,7 +8,7 @@ COMPONENTS
 
 gic400.library (LIBS:)
   ARM GIC-400 interrupt controller library.
-  Required by xhci.device, genet.device, and bcmpcie.library.
+  Required by xhci.device, genet.device, nvme.device, and bcmpcie.library.
 
 bcmpcie.library (LIBS:)
   BCM2711 PCIe bus library. Initialises the PCIe controller, enumerates
@@ -21,6 +21,9 @@ xhci.device (DEVS:USBHardware/)
 genet.device (DEVS:Networks/)
   Gigabit Ethernet SANA-II driver for the Genet controller built into
   the Raspberry Pi 4 / CM4.
+
+nvme.device (DEVS:)
+  NVMe storage driver for PCIe-attached NVMe SSDs.
 
 openpci.library (LIBS:) [optional]
   Compatibility shim for software that calls OpenLibrary("openpci.library").

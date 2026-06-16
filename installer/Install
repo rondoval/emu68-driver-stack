@@ -16,6 +16,7 @@
         "  \x95 bcmpcie.library  \x97 BCM2711 PCIe bus library\n"
         "  \x95 xhci.device     \x97 USB 3.0 (VIA VL805)\n"
         "  \x95 genet.device    \x97 Gigabit Ethernet\n"
+        "  \x95 nvme.device     \x97 NVMe storage driver\n"
         "  \x95 openpci.library \x97 PCIe Compatibility shim (optional)\n"
         "  \x95 lspci           \x97 PCIe diagnostic tool (optional)\n\n"
         "Version: " #emu68-version
@@ -95,6 +96,23 @@
         (help
             "genet.device provides Ethernet via the standard SANA-II interface.\n"
             "It requires gic400.library."
+        )
+        (default 1)
+    )
+)
+
+; nvme.device
+(set #install-nvme
+    (askbool
+        (prompt
+            (cat
+                "Install nvme.device?\n\n"
+                "NVMe storage driver for PCIe-attached NVMe SSDs."
+            )
+        )
+        (help
+            "nvme.device provides block-storage access to supported NVMe drives.\n"
+            "It requires bcmpcie.library and gic400.library."
         )
         (default 1)
     )
@@ -184,6 +202,16 @@
             (source "DEVS/Networks/genet.device")
             (dest   "DEVS:Networks/")
             (prompt "Copying genet.device...")
+        )
+    )
+)
+
+(if (= #install-nvme 1)
+    (
+        (copyfiles
+            (source "DEVS/nvme.device")
+            (dest   "DEVS:")
+            (prompt "Copying nvme.device...")
         )
     )
 )
