@@ -12,6 +12,42 @@ endif()
 set(EMU68_DRIVER_STACK_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake" CACHE FILEPATH "Toolchain file used for all component builds")
 set(EMU68_TOOLCHAIN_BIN_DIR "/opt/m68k-amigaos/bin" CACHE PATH "Directory added to PATH for component builds")
 
+# Debug-output backend for the whole stack (see emu68-common/include/debug.h):
+#   pistorm (default) - RawDoFmt -> magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
+#   serial            - debug.lib KPrintF -> console (serial @ 9600). Not ROM-able.
+#   off               - debug fully compiled out.
+# Propagated to every component below so a single backend is used consistently.
+set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
+set_property(CACHE EMU68_DEBUG_BACKEND PROPERTY STRINGS pistorm serial off)
+
+# Verbose ("high") debug logging (debug.h KprintfH / DEBUG_HIGH).  Independent of
+# the backend, but requires DEBUG (i.e. backend != off) to actually emit anything.
+# Value: a list of the stack component target names below to build with DEBUG_HIGH,
+# or ALL for every debug-emitting component.  Empty (default) = off everywhere.
+#   e.g. -DEMU68_DEBUG_HIGH=emu68-pcie-library
+# Propagated per-component as a boolean by add_stack_project() below.
+set(EMU68_DEBUG_HIGH "" CACHE STRING "Components to build with verbose DEBUG_HIGH logging (list, or ALL)")
+
+# Components that emit debug output (consume emu68-common's debug.h); the only ones
+# for which EMU68_DEBUG_HIGH is meaningful.  Used to reject typos in the list.
+set(EMU68_DEBUG_COMPONENTS
+    emu68-common
+    emu68-gic400-library
+    emu68-pcie-library
+    emu68-xhci-driver
+    emu68-genet-driver
+    emu68-nvme-driver)
+
+if(NOT EMU68_DEBUG_HIGH STREQUAL "ALL")
+    foreach(_dh ${EMU68_DEBUG_HIGH})
+        if(NOT _dh IN_LIST EMU68_DEBUG_COMPONENTS)
+            message(FATAL_ERROR
+                "EMU68_DEBUG_HIGH entry '${_dh}' is not a debug-emitting component.\n"
+                "Valid values: ALL or any of: ${EMU68_DEBUG_COMPONENTS}")
+        endif()
+    endforeach()
+endif()
+
 # Default source directories point to the bundled submodules.
 # Override any of these with -D<VAR>=/path/to/your/checkout for local development.
 set(DEVICETREE_RESOURCE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/components/devicetree.resource" CACHE PATH "Path to devicetree.resource sources")
@@ -55,6 +91,13 @@ function(add_stack_project target source_dir)
     set(multiValueArgs DEPENDS EXTRA_CMAKE_ARGS)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+    # Turn the stack-wide EMU68_DEBUG_HIGH component list into this component's
+    # boolean.  Harmless no-op for components that don't consume the debug module.
+    set(_debug_high OFF)
+    if(EMU68_DEBUG_HIGH STREQUAL "ALL" OR target IN_LIST EMU68_DEBUG_HIGH)
+        set(_debug_high ON)
+    endif()
+
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
@@ -63,6 +106,7 @@ function(add_stack_project target source_dir)
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${EMU68_DRIVER_STACK_TOOLCHAIN_FILE}
             -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
+            -DEMU68_DEBUG_HIGH:BOOL=${_debug_high}
             ${STACK_EXTRA_CMAKE_ARGS}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
@@ -75,15 +119,19 @@ function(add_stack_project target source_dir)
     )
 endfunction()
 
+# Propagate the debug backend to every component that emits debug output (i.e.
+# uses emu68-common's debug.h). devicetree.resource/mailbox.resource don't.
+set(EMU68_DEBUG_ARGS EXTRA_CMAKE_ARGS -DEMU68_DEBUG_BACKEND:STRING=${EMU68_DEBUG_BACKEND})
+
 # Add all stack projects
 add_stack_project(devicetree.resource "${DEVICETREE_RESOURCE_SOURCE_DIR}")
 add_stack_project(mailbox.resource "${MAILBOX_RESOURCE_SOURCE_DIR}" DEPENDS devicetree.resource)
-add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource)
-add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource)
-add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
-add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library)
-add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
-add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
+add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common ${EMU68_DEBUG_ARGS})
 
 add_custom_target(stack ALL
     DEPENDS

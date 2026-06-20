@@ -15,6 +15,10 @@ These instructions are specific to the top-level superbuild repo.
   - `cmake --build build`
 - The toolchain is expected under `/opt/m68k-amigaos`.
 - The superbuild creates per-component build directories under `emu68-driver-stack/build/`; prefer this over ad hoc downstream rebuilds when interface changes are involved.
+- Debug output backend is stack-wide via `EMU68_DEBUG_BACKEND` (default `pistorm`),
+  propagated to all components: `cmake -S . -B build -DEMU68_DEBUG_BACKEND=serial`
+  (`pistorm` → `0xdeadbeef` trap, ROM-able | `serial` → `debug.lib` serial @ 9600,
+  not ROM-able | `off` → compiled out). See `components/emu68-common`.
 
 ## Dependency Order
 
