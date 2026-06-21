@@ -160,7 +160,51 @@ add_custom_target(stack ALL
 # ---------------------------------------------------------------------------
 
 set(PACKAGE_VERSION "${PROJECT_VERSION}")
-set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}")
+
+# Harvest each shipped binary's version from its component's project() so the
+# generated ReadMe and the release notes can list them.  The component CMakeLists
+# stays the single source of truth — we only parse, never duplicate the numbers.
+# Authoritative file = the project() that carries the literal numeric version that
+# is embedded into that binary (subdir projects inherit it via CMAKE_PROJECT_VERSION).
+function(emu68_read_version out path)
+    file(STRINGS "${path}" _lines REGEX "project[ \t]*\\(.*VERSION")
+    list(GET _lines 0 _line)
+    string(REGEX MATCH "VERSION[ \t]+([0-9]+(\\.[0-9]+)*)" _m "${_line}")
+    set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+
+emu68_read_version(GIC400_VERSION  "${EMU68_GIC400_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(BCMPCIE_VERSION "${EMU68_PCIE_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(OPENPCI_VERSION "${EMU68_PCIE_SOURCE_DIR}/openpci.library/CMakeLists.txt")
+emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(GENET_VERSION   "${EMU68_GENET_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
+
+# Describe the debug backend for the generated ReadMe so each archive is
+# self-describing about which build variant it is.
+set(DEBUG_BACKEND "${EMU68_DEBUG_BACKEND}")
+if(EMU68_DEBUG_BACKEND STREQUAL "off")
+    set(DEBUG_BACKEND_DESCRIPTION
+        "Production build - driver debug output is disabled.")
+elseif(EMU68_DEBUG_BACKEND STREQUAL "serial")
+    set(DEBUG_BACKEND_DESCRIPTION
+        "Debug build - driver debug output is sent to the Amiga serial port\n  (9600 baud) on real hardware, or can be captured/redirected on a host\n  with the Sashimi tool.")
+else()
+    set(DEBUG_BACKEND_DESCRIPTION
+        "Debug build (${EMU68_DEBUG_BACKEND} backend) - driver debug output is routed\n  through the Emu68/PiStorm debug console.")
+endif()
+
+# Suffix the package name by backend so a release can ship multiple variants
+# side by side.  'off' is the production download and carries no suffix.
+if(EMU68_DEBUG_BACKEND STREQUAL "off")
+    set(PACKAGE_SUFFIX "")
+elseif(EMU68_DEBUG_BACKEND STREQUAL "serial")
+    set(PACKAGE_SUFFIX "-serial")
+else()
+    set(PACKAGE_SUFFIX "-${EMU68_DEBUG_BACKEND}")
+endif()
+
+set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}${PACKAGE_SUFFIX}")
 set(PACKAGE_DIR     "${CMAKE_BINARY_DIR}/package")
 set(PACKAGE_STAGE   "${PACKAGE_DIR}/${PACKAGE_NAME}")
 set(PACKAGE_ARCHIVE "${PACKAGE_DIR}/${PACKAGE_NAME}.lha")
@@ -187,6 +231,19 @@ configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/installer/ReadMe.in"
     "${CMAKE_BINARY_DIR}/installer/ReadMe"
     @ONLY)
+
+# Plain-text component-version manifest, reused as the GitHub release body so the
+# release notes carry the same versions the ReadMe shows (single generation).
+file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
+"emu68 Driver Stack ${PACKAGE_VERSION} - component versions:
+
+  gic400.library    ${GIC400_VERSION}
+  bcmpcie.library   ${BCMPCIE_VERSION}
+  xhci.device       ${XHCI_VERSION}
+  genet.device      ${GENET_VERSION}
+  nvme.device       ${NVME_VERSION}
+  openpci.library   ${OPENPCI_VERSION}
+")
 
 add_custom_target(package
     DEPENDS stack

@@ -10,11 +10,19 @@
 #   scripts/docker-build.sh                 # configure + build the whole stack
 #   scripts/docker-build.sh --target package  # ...and create the .lha release archive
 #   EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial" scripts/docker-build.sh
+#   # build two backends side by side (distinct dirs, no clobber):
+#   EMU68_BUILD_DIR=build-off    EMU68_INSTALL_DIR=install-off \
+#       EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=off"    scripts/docker-build.sh --target package
+#   EMU68_BUILD_DIR=build-serial EMU68_INSTALL_DIR=install-serial \
+#       EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial" scripts/docker-build.sh --target package
 #
-# Any arguments are forwarded to `cmake --build build <args>`.
+# Any arguments are forwarded to `cmake --build <build dir> <args>`.
 # Environment overrides:
 #   EMU68_BUILD_IMAGE     Toolchain image tag (default: amigadev/crosstools:m68k-amigaos)
-#   EMU68_CONFIGURE_ARGS  Extra args appended to the `cmake -S . -B build` configure step
+#   EMU68_CONFIGURE_ARGS  Extra args appended to the `cmake -S . -B <build dir>` configure step
+#   EMU68_BUILD_DIR       CMake build directory, relative to the workspace (default: build)
+#   EMU68_INSTALL_DIR     Install prefix, relative to the workspace (default: install).
+#                         The package's .lha lands in <EMU68_BUILD_DIR>/package/.
 set -euo pipefail
 
 IMAGE=${EMU68_BUILD_IMAGE:-"amigadev/crosstools:m68k-amigaos"}
@@ -41,6 +49,8 @@ docker run --rm \
 	-e HOME=/tmp \
 	-e LC_ALL=C \
 	-e EMU68_CONFIGURE_ARGS \
+	-e EMU68_BUILD_DIR \
+	-e EMU68_INSTALL_DIR \
 	"${IMAGE}" \
-	sh -c 'cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/work/install ${EMU68_CONFIGURE_ARGS:-} && cmake --build build "$@"' \
+	sh -c 'BD=${EMU68_BUILD_DIR:-build}; ID=/work/${EMU68_INSTALL_DIR:-install}; cmake -S . -B "$BD" -DCMAKE_INSTALL_PREFIX="$ID" ${EMU68_CONFIGURE_ARGS:-} && cmake --build "$BD" "$@"' \
 	sh "$@"

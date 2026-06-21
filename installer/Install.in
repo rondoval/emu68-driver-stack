@@ -19,6 +19,7 @@
         "  \x95 bcmpcie.library  \x97 BCM2711 PCIe bus library\n"
         "  \x95 xhci.device     \x97 USB 3.0 (VIA VL805)\n"
         "  \x95 genet.device    \x97 Gigabit Ethernet\n"
+        "  \x95 genet-stats      \x97 Ethernet statistics viewer\n"
         "  \x95 nvme.device     \x97 NVMe storage driver\n"
         "  \x95 nvmeinfo/nvmeadm \x97 NVMe diagnostic & admin tools\n"
         "  \x95 openpci.library \x97 PCIe Compatibility shim (optional)\n"
@@ -223,6 +224,13 @@
             (source "DEVS/Networks/genet.device")
             (dest   "DEVS:Networks/")
             (prompt "Copying genet.device...")
+        )
+        ; genet-stats — SANA-II statistics viewer for genet.device.
+        ; Installed alongside the driver to C:.
+        (copyfiles
+            (source "C/genet-stats")
+            (dest   "C:")
+            (prompt "Copying genet-stats...")
         )
     )
 )

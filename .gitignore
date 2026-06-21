@@ -1,2 +1,6 @@
 build/
 install/
+# per-backend build/install trees (e.g. build-off, install-serial) from
+# dual-backend builds (CI release, side-by-side local builds)
+build-*/
+install-*/

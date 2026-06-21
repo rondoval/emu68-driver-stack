@@ -11,21 +11,29 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: ["off", "serial"]
+
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Build (in toolchain container)
+      - name: Build ${{ matrix.backend }} backend (in toolchain container)
         run: ./scripts/docker-build.sh
+        env:
+          EMU68_INSTALL_DIR: install-${{ matrix.backend }}
+          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=${{ matrix.backend }}"
 
       - name: Upload runtime artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: emu68-drivers
+          name: emu68-drivers-${{ matrix.backend }}
           path: |
-            install/LIBS
-            install/DEVS
-            install/C
+            install-${{ matrix.backend }}/LIBS
+            install-${{ matrix.backend }}/DEVS
+            install-${{ matrix.backend }}/C
           if-no-files-found: error

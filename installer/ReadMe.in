@@ -1,32 +1,44 @@
 emu68 Driver Stack @PACKAGE_VERSION@
-========================
+====================================
 AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
 
-(This file is generated from ReadMe.in; the version is stamped in at build time.)
+
+BUILD VARIANT
+-------------
+
+  @DEBUG_BACKEND@
+  @DEBUG_BACKEND_DESCRIPTION@
+
+The 'off' archive is the normal download. The 'serial' archive is identical
+except every driver also emits debug output, for troubleshooting.
 
 
 COMPONENTS
 ----------
 
-gic400.library (LIBS:)
+gic400.library @GIC400_VERSION@ (LIBS:)
   ARM GIC-400 interrupt controller library.
   Required by xhci.device, genet.device, nvme.device, and bcmpcie.library.
   The installer skips this automatically if a copy is already present in ROM
   or an expansion resident module.
 
-bcmpcie.library (LIBS:)
+bcmpcie.library @BCMPCIE_VERSION@ (LIBS:)
   BCM2711 PCIe bus library. Initialises the PCIe controller, enumerates
   devices, allocates BARs, and provides the driver API.
 
-xhci.device (DEVS:USBHardware/)
+xhci.device @XHCI_VERSION@ (DEVS:USBHardware/)
   USB 3.0 host controller driver for the VIA VL805 chip present on every
   Raspberry Pi 4 board. Works with the Poseidon USB stack.
 
-genet.device (DEVS:Networks/)
+genet.device @GENET_VERSION@ (DEVS:Networks/)
   Gigabit Ethernet SANA-II driver for the Genet controller built into
   the Raspberry Pi 4 / CM4.
 
-nvme.device (DEVS:)
+genet-stats (C:)
+  SANA-II statistics viewer for genet.device, installed automatically with
+  the driver. Displays live interface counters in a window.
+
+nvme.device @NVME_VERSION@ (DEVS:)
   NVMe storage driver for PCIe-attached NVMe SSDs.
 
 nvmeinfo, nvmeadm (C:)
@@ -34,7 +46,7 @@ nvmeinfo, nvmeadm (C:)
   with the driver. nvmeinfo lists NVMe controllers and namespaces; nvmeadm
   reports SMART/health, identify, log pages, self-test, and firmware info.
 
-openpci.library (LIBS:) [optional]
+openpci.library @OPENPCI_VERSION@ (LIBS:) [optional]
   Compatibility shim for software that calls OpenLibrary("openpci.library").
   Forwards calls to bcmpcie.library. Do NOT install if you have a real PCI
   expansion board (Mediator, Prometheus, G-REX, ...).

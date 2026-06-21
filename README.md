@@ -92,7 +92,7 @@ every component so the whole image stays consistent:
 | Value     | Debug output                                                          | ROM-able |
 |-----------|-----------------------------------------------------------------------|----------|
 | `pistorm` | `RawDoFmt` → magic address `0xdeadbeef`, trapped & printed by Emu68    | yes      |
-| `serial`  | `debug.lib` `KPutChar` → console (AmigaOS serial debug @ 9600 baud)    | no¹      |
+| `serial`  | `debug.lib` `KPutChar` → Amiga serial port @ 9600 baud                | no¹      |
 | `off`     | debug output compiled out                                             | yes      |
 
 ```sh
@@ -100,9 +100,10 @@ cmake -S . -B build -DEMU68_DEBUG_BACKEND=serial   # pistorm (default) | serial 
 cmake --build build
 ```
 
-Switching the value reconfigures and rebuilds the affected components.  Use
-`serial` when running under an emulator (e.g. WinUAE/vAmiga) or on hardware that
-captures the AmigaOS serial debug console; use `off` for the smallest binaries.
+Switching the value reconfigures and rebuilds the affected components.  With
+`serial`, debug output goes to the Amiga serial port (9600 baud) on real
+hardware, or can be captured/redirected on a host with the Sashimi tool; use
+`off` for the smallest binaries.
 
 ¹ The `serial` backend links `debug.lib`, which carries a 4-byte writable
 `_SysBase`, so those binaries are intentionally **not** ROM-able and skip the ROM
