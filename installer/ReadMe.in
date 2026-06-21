@@ -1,6 +1,8 @@
-emu68 Driver Stack 1.0.0
+emu68 Driver Stack @PACKAGE_VERSION@
 ========================
 AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
+
+(This file is generated from ReadMe.in; the version is stamped in at build time.)
 
 
 COMPONENTS
@@ -9,6 +11,8 @@ COMPONENTS
 gic400.library (LIBS:)
   ARM GIC-400 interrupt controller library.
   Required by xhci.device, genet.device, nvme.device, and bcmpcie.library.
+  The installer skips this automatically if a copy is already present in ROM
+  or an expansion resident module.
 
 bcmpcie.library (LIBS:)
   BCM2711 PCIe bus library. Initialises the PCIe controller, enumerates
@@ -24,6 +28,11 @@ genet.device (DEVS:Networks/)
 
 nvme.device (DEVS:)
   NVMe storage driver for PCIe-attached NVMe SSDs.
+
+nvmeinfo, nvmeadm (C:)
+  Diagnostic and admin CLI tools for nvme.device, installed automatically
+  with the driver. nvmeinfo lists NVMe controllers and namespaces; nvmeadm
+  reports SMART/health, identify, log pages, self-test, and firmware info.
 
 openpci.library (LIBS:) [optional]
   Compatibility shim for software that calls OpenLibrary("openpci.library").

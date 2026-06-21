@@ -1,8 +1,11 @@
 ; emu68 Driver Stack Installer
 ; Requires Commodore Installer v43.3 or later.
 ; SPDX-License-Identifier: GPL-2.0+
+;
+; NOTE: this is a template.  The build's `package` target generates the real
+; `Install` from it, substituting @PACKAGE_VERSION@ from the CMake project version.
 
-(set #emu68-version "1.0.0")
+(set #emu68-version "@PACKAGE_VERSION@")
 
 ; ---------------------------------------------------------------------------
 ; Welcome
@@ -17,6 +20,7 @@
         "  \x95 xhci.device     \x97 USB 3.0 (VIA VL805)\n"
         "  \x95 genet.device    \x97 Gigabit Ethernet\n"
         "  \x95 nvme.device     \x97 NVMe storage driver\n"
+        "  \x95 nvmeinfo/nvmeadm \x97 NVMe diagnostic & admin tools\n"
         "  \x95 openpci.library \x97 PCIe Compatibility shim (optional)\n"
         "  \x95 lspci           \x97 PCIe diagnostic tool (optional)\n\n"
         "Version: " #emu68-version
@@ -28,21 +32,38 @@
 ; Component selection
 ; ---------------------------------------------------------------------------
 
-; gic400.library — required by everything else
-(set #install-gic400
-    (askbool
-        (prompt
+; gic400.library — required by everything else.
+; If a copy is already resident in ROM or an expansion module, skip the disk
+; install: the drivers open the resident one. (getversion ... (resident)) scans
+; the Kickstart resident-module list and returns 0 when no resident copy exists.
+(set #gic400-rom (getversion "gic400.library" (resident)))
+(if (> #gic400-rom 0)
+    (
+        (set #install-gic400 0)
+        (message
             (cat
-                "Install gic400.library?\n\n"
-                "This library manages the ARM GIC-400 interrupt controller.\n"
-                "It is required by xhci.device, genet.device, and bcmpcie.library."
+                "gic400.library is already present in ROM or an expansion\n"
+                "resident module \x97 skipping its installation to LIBS:.\n\n"
+                "The PCIe and network drivers will use the resident copy."
             )
         )
-        (help
-            "gic400.library must be present in LIBS: for the PCIe and\n"
-            "network drivers to function."
+    )
+    ; else: no resident copy — offer to install it to LIBS:
+    (set #install-gic400
+        (askbool
+            (prompt
+                (cat
+                    "Install gic400.library?\n\n"
+                    "This library manages the ARM GIC-400 interrupt controller.\n"
+                    "It is required by xhci.device, genet.device, and bcmpcie.library."
+                )
+            )
+            (help
+                "gic400.library must be present in LIBS: for the PCIe and\n"
+                "network drivers to function."
+            )
+            (default 1)
         )
-        (default 1)
     )
 )
 
@@ -212,6 +233,18 @@
             (source "DEVS/nvme.device")
             (dest   "DEVS:")
             (prompt "Copying nvme.device...")
+        )
+        ; nvmeinfo / nvmeadm — diagnostic and admin CLI tools for nvme.device.
+        ; Installed alongside the driver to C:.
+        (copyfiles
+            (source "C/nvmeinfo")
+            (dest   "C:")
+            (prompt "Copying nvmeinfo...")
+        )
+        (copyfiles
+            (source "C/nvmeadm")
+            (dest   "C:")
+            (prompt "Copying nvmeadm...")
         )
     )
 )

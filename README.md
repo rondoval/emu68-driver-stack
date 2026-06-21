@@ -31,6 +31,7 @@ repositories are included as git submodules under `components/`.
 ## Assumptions
 
 - Bebbo's AmigaOS cross-toolchain is installed under `/opt/m68k-amigaos`
+  — or use the Docker build below, which needs no local toolchain.
 
 ## Building
 
@@ -50,6 +51,23 @@ git submodule update --init --recursive
 cmake -S . -B build
 cmake --build build
 ```
+
+### Building with Docker (no local toolchain)
+
+`scripts/docker-build.sh` runs the build inside the same cross-toolchain image CI
+uses (`amigadev/crosstools:m68k-amigaos`), so no local `/opt/m68k-amigaos` install
+is required. It also carries the `lha` archiver used by the `package` target.
+
+```sh
+git submodule update --init --recursive   # submodules are read from the host
+./scripts/docker-build.sh                  # configure + build the whole stack
+./scripts/docker-build.sh --target package # ...and create the .lha release archive
+```
+
+Build outputs land in `install/` and `build/` on the host, owned by your user (the
+wrapper runs the container as your uid/gid). Pass extra configure-time options via
+`EMU68_CONFIGURE_ARGS`, e.g. `EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial"`;
+any positional arguments are forwarded to `cmake --build build`.
 
 ## Local development — working on an individual component
 
@@ -131,15 +149,20 @@ git commit -m "Bump emu68-xhci-driver to v4.1.0"
 
 ## Creating a release package
 
-No external archiver is required — the target uses CMake's built-in `tar`:
-
 ```sh
 cmake --build build --target package
+# or, without a local toolchain:
+./scripts/docker-build.sh --target package
 ```
 
-This produces `build/package/emu68-drivers-<version>.zip` containing the runtime
-binaries (`LIBS/`, `DEVS/`, `C/`) alongside the Commodore Installer script, so
-the installer can be run directly from the unpacked archive.
+This produces `build/package/emu68-drivers-<version>.lha`
+containing the runtime binaries (`LIBS/`, `DEVS/`, `C/`) alongside the Installer script, so the installer can be run directly from the unpacked archive.
+The package version is taken from the project version in `CMakeLists.txt` and stamped
+into the installer's `Install` / `ReadMe` (generated from the `*.in` templates), so
+there is a single version source.
+
+Packaging needs the `lha` archiver. It ships in the toolchain image used by
+`scripts/docker-build.sh`; for a native build, install an `lha` archiver yourself.
 
 ## Custom install prefix
 

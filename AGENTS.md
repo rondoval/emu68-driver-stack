@@ -13,7 +13,12 @@ These instructions are specific to the top-level superbuild repo.
 - Preferred rebuild commands:
   - `cmake -S . -B build`
   - `cmake --build build`
-- The toolchain is expected under `/opt/m68k-amigaos`.
+- The toolchain is expected under `/opt/m68k-amigaos`. With no local toolchain,
+  `./scripts/docker-build.sh [--target package]` builds inside the CI image
+  (`amigadev/crosstools:m68k-amigaos`); CI runs the same wrapper.
+- `package` produces `build/package/emu68-drivers-<version>.lha` (needs `lha`, which
+  the toolchain image ships). The version comes from `CMakeLists.txt` and is stamped
+  into `installer/Install`/`ReadMe`, generated from the `*.in` templates.
 - The superbuild creates per-component build directories under `emu68-driver-stack/build/`; prefer this over ad hoc downstream rebuilds when interface changes are involved.
 - Debug output backend is stack-wide via `EMU68_DEBUG_BACKEND` (default `pistorm`),
   propagated to all components: `cmake -S . -B build -DEMU68_DEBUG_BACKEND=serial`

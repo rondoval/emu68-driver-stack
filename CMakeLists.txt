@@ -92,10 +92,16 @@ function(add_stack_project target source_dir)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     # Turn the stack-wide EMU68_DEBUG_HIGH component list into this component's
-    # boolean.  Harmless no-op for components that don't consume the debug module.
-    set(_debug_high OFF)
-    if(EMU68_DEBUG_HIGH STREQUAL "ALL" OR target IN_LIST EMU68_DEBUG_HIGH)
-        set(_debug_high ON)
+    # boolean.  Only pass it to debug-emitting components (those that consume
+    # emu68-common's debug.h); handing it to the others (devicetree.resource/
+    # mailbox.resource) trips CMake's "unused variable" warning.
+    set(_debug_high_arg "")
+    if(target IN_LIST EMU68_DEBUG_COMPONENTS)
+        set(_debug_high OFF)
+        if(EMU68_DEBUG_HIGH STREQUAL "ALL" OR target IN_LIST EMU68_DEBUG_HIGH)
+            set(_debug_high ON)
+        endif()
+        set(_debug_high_arg -DEMU68_DEBUG_HIGH:BOOL=${_debug_high})
     endif()
 
     ExternalProject_Add(${target}
@@ -106,7 +112,7 @@ function(add_stack_project target source_dir)
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${EMU68_DRIVER_STACK_TOOLCHAIN_FILE}
             -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
-            -DEMU68_DEBUG_HIGH:BOOL=${_debug_high}
+            ${_debug_high_arg}
             ${STACK_EXTRA_CMAKE_ARGS}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
@@ -127,7 +133,7 @@ set(EMU68_DEBUG_ARGS EXTRA_CMAKE_ARGS -DEMU68_DEBUG_BACKEND:STRING=${EMU68_DEBUG
 add_stack_project(devicetree.resource "${DEVICETREE_RESOURCE_SOURCE_DIR}")
 add_stack_project(mailbox.resource "${MAILBOX_RESOURCE_SOURCE_DIR}" DEPENDS devicetree.resource)
 add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource ${EMU68_DEBUG_ARGS})
-add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource emu68-common ${EMU68_DEBUG_ARGS})
 add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library ${EMU68_DEBUG_ARGS})
 add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library ${EMU68_DEBUG_ARGS})
 add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library ${EMU68_DEBUG_ARGS})
@@ -146,8 +152,9 @@ add_custom_target(stack ALL
 )
 
 # ---------------------------------------------------------------------------
-# package target — creates emu68-drivers-<version>.zip for distribution.
-# Uses cmake -E tar (built-in, no external tool required).
+# package target — creates emu68-drivers-<version>.lha for distribution.
+# the amigadev/crosstools image ships the archiver, and scripts/docker-build.sh
+# builds inside that image.
 # The installer/ tree is bundled alongside the runtime binaries so Commodore
 # Installer can be run directly from the archive.
 # ---------------------------------------------------------------------------
@@ -156,7 +163,30 @@ set(PACKAGE_VERSION "${PROJECT_VERSION}")
 set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}")
 set(PACKAGE_DIR     "${CMAKE_BINARY_DIR}/package")
 set(PACKAGE_STAGE   "${PACKAGE_DIR}/${PACKAGE_NAME}")
-set(PACKAGE_ARCHIVE "${PACKAGE_DIR}/${PACKAGE_NAME}.zip")
+set(PACKAGE_ARCHIVE "${PACKAGE_DIR}/${PACKAGE_NAME}.lha")
+
+# Locate the LHA archiver.  The toolchain image provides it; a native build
+# without lha can still build the drivers — only the 'package' target needs it,
+# so warn (don't fail) here and let the target itself fail if it is run.
+find_program(LHA_EXECUTABLE lha)
+if(NOT LHA_EXECUTABLE)
+    message(WARNING
+        "lha archiver not found: the 'package' target will fail if run.\n"
+        "Build/package via scripts/docker-build.sh (the toolchain image ships lha), "
+        "or install an lha archiver.")
+    set(LHA_EXECUTABLE lha)
+endif()
+
+# Stamp the package version into the installer files — single source of truth is
+# PROJECT_VERSION.  The .in templates carry the @PACKAGE_VERSION@ placeholder.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/installer/Install.in"
+    "${CMAKE_BINARY_DIR}/installer/Install"
+    @ONLY)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/installer/ReadMe.in"
+    "${CMAKE_BINARY_DIR}/installer/ReadMe"
+    @ONLY)
 
 add_custom_target(package
     DEPENDS stack
@@ -169,13 +199,20 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
-    # Copy installer files
+    # Copy installer files, then swap in the version-stamped Install/ReadMe (the
+    # source tree carries the .in templates; the generated files replace them).
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/installer" "${PACKAGE_STAGE}"
-    # Create the zip (chdir so the archive contains relative paths)
+    COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_STAGE}/Install.in" "${PACKAGE_STAGE}/ReadMe.in"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_BINARY_DIR}/installer/Install" "${PACKAGE_STAGE}/Install"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_BINARY_DIR}/installer/ReadMe" "${PACKAGE_STAGE}/ReadMe"
+    # Create the LHA archive (chdir so paths inside are relative to the package root)
+    COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_ARCHIVE}"
     COMMAND ${CMAKE_COMMAND} -E chdir "${PACKAGE_DIR}"
-        ${CMAKE_COMMAND} -E tar cf "${PACKAGE_ARCHIVE}" --format=zip "${PACKAGE_NAME}/"
+        ${LHA_EXECUTABLE} a "${PACKAGE_NAME}.lha" "${PACKAGE_NAME}/"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-    COMMENT "Creating ${PACKAGE_NAME}.zip"
+    COMMENT "Creating ${PACKAGE_NAME}.lha"
     VERBATIM
 )
