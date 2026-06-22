@@ -304,6 +304,32 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
+    # Public SDK headers for the shipped libraries (nvme, gic400, bcmpcie/openpci),
+    # under Developer/include/.  proto/clib/inline/pragmas hold only these libs'
+    # headers (devicetree/mailbox protos live under install/Developer/, emu68-common
+    # headers under install/include/ root) -> copy those four wholesale.  devices/
+    # and libraries/ are enumerated to ship only the curated set: devices/nvme.h
+    # (not nvme_defs.h) and the bcmpcie/gic library headers minus pci_constants.h /
+    # pci_ids.h -- which keeps emu68-common out entirely (nothing pulls in types.h).
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/include/proto"   "${PACKAGE_STAGE}/Developer/include/proto"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/include/clib"    "${PACKAGE_STAGE}/Developer/include/clib"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/include/inline"  "${PACKAGE_STAGE}/Developer/include/inline"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/include/pragmas" "${PACKAGE_STAGE}/Developer/include/pragmas"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/devices"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_INSTALL_PREFIX}/include/devices/nvme.h"
+        "${PACKAGE_STAGE}/Developer/include/devices/"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/libraries"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_INSTALL_PREFIX}/include/libraries/gic400.h"
+        "${CMAKE_INSTALL_PREFIX}/include/libraries/bcmpcie_errors.h"
+        "${CMAKE_INSTALL_PREFIX}/include/libraries/openpci.h"
+        "${CMAKE_INSTALL_PREFIX}/include/libraries/pcitags.h"
+        "${PACKAGE_STAGE}/Developer/include/libraries/"
     # Copy installer files, then swap in the version-stamped Install/ReadMe (the
     # source tree carries the .in templates; the generated files replace them).
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -320,10 +346,12 @@ add_custom_target(package
         "${CMAKE_CURRENT_SOURCE_DIR}/RELEASE-NOTES.md" "${PACKAGE_STAGE}/RELEASE-NOTES.md"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_BINARY_DIR}/installer/Licenses" "${PACKAGE_STAGE}/Licenses"
-    # Create the LHA archive (chdir so paths inside are relative to the package root)
+    # Create the LHA archive.  chdir into the staging dir and add its contents (".")
+    # so the tree is flattened: LIBS/, DEVS/, Developer/, Install, ... sit at the
+    # archive root rather than under an emu68-drivers-<ver>/ wrapper directory.
     COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_ARCHIVE}"
-    COMMAND ${CMAKE_COMMAND} -E chdir "${PACKAGE_DIR}"
-        ${LHA_EXECUTABLE} a "${PACKAGE_NAME}.lha" "${PACKAGE_NAME}/"
+    COMMAND ${CMAKE_COMMAND} -E chdir "${PACKAGE_STAGE}"
+        ${LHA_EXECUTABLE} a "${PACKAGE_ARCHIVE}" "."
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     COMMENT "Creating ${PACKAGE_NAME}.lha"
     VERBATIM
