@@ -156,14 +156,65 @@ cmake --build build --target package
 ./scripts/docker-build.sh --target package
 ```
 
-This produces `build/package/emu68-drivers-<version>.lha`
-containing the runtime binaries (`LIBS/`, `DEVS/`, `C/`) alongside the Installer script, so the installer can be run directly from the unpacked archive.
-The package version is taken from the project version in `CMakeLists.txt` and stamped
-into the installer's `Install` / `ReadMe` (generated from the `*.in` templates), so
-there is a single version source.
+This produces `build/package/emu68-drivers-<version>.lha` containing the runtime
+binaries (`LIBS/`, `DEVS/`, `C/`) alongside the Installer script, so the installer
+can be run directly from the unpacked archive. It also bundles, for licence
+completeness and self-documentation:
+
+- `Documentation/<component>/` — each component's `README.md`, `LICENSE`, and
+  release notes;
+- `Licenses` — a generated summary mapping every component (and shipped binary) to
+  its licence and to its `Documentation/<component>/LICENSE`;
+- `RELEASE-NOTES.md` — the top-level changelog.
+
+The package version is taken from the project version in `CMakeLists.txt` and
+stamped into the installer's `Install` / `ReadMe` (generated from the `*.in`
+templates), so there is a single version source.
 
 Packaging needs the `lha` archiver. It ships in the toolchain image used by
 `scripts/docker-build.sh`; for a native build, install an `lha` archiver yourself.
+
+## Releasing the stack
+
+Components and the stack version each as follows. **Every** pull request — in a
+component repo or this one — is gated by CI on three checks: the CMake
+`project(... VERSION ...)` is bumped, `RELEASE-NOTES.md` is updated, and the code
+compiles cleanly.
+
+**Per component repo** (only those that changed):
+
+1. Update the component's single `RELEASE-NOTES.md` (newest entry on top) and bump
+   its `project(... VERSION ...)`.
+2. Open a PR. CI enforces the version bump, the release-notes change, and a clean
+   build of the component *inside the stack* (it builds the stack with this
+   component's source overridden — see `.github/workflows/component-versioning.yml`).
+3. Merge to `main` → CI auto-creates the `v<version>` git tag. Component repos do
+   **not** publish GitHub Releases; the tag is the stable point this repo's
+   submodule pointer tracks.
+
+**This (stack) repo — single release PR:**
+
+1. Bump each changed submodule pointer to the new component tag (see
+   [Versioning](#versioning)).
+2. Bump the stack version in [`CMakeLists.txt`](CMakeLists.txt) (`project(emu68_driver_stack VERSION X.Y.Z)`).
+3. Update [`RELEASE-NOTES.md`](RELEASE-NOTES.md): refresh the component-versions table and headlines,
+   linking each component's `RELEASE-NOTES.md`. Append the new stack version on top.
+4. Update `installer/ReadMe.in` / `installer/Install.in` only if components were
+   added or removed.
+5. Open the PR (same three gates apply via `build.yml` + `release-checks.yml`),
+   then merge.
+6. **Tag the release manually** and push it:
+   ```sh
+   git tag v<stack-version> && git push origin v<stack-version>
+   ```
+   The tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the `off`
+   (production) and `serial` (debug) variants, runs the `package` target, and
+   publishes the GitHub Release with both `.lha` files (component versions from
+   `VERSIONS.txt` are prepended to the notes).
+
+No CI? Build each variant locally with `./scripts/docker-build.sh --target package`
+(`EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=off"` / `=serial`) and attach the
+archives to the release by hand.
 
 ## Custom install prefix
 

@@ -1,0 +1,36 @@
+name: Release checks
+
+# Every PR to main must bump the stack version and record the change in
+# RELEASE-NOTES.md, so the stack version always moves forward and the changelog
+# stays current. Compilation is gated separately by build.yml. (Same version +
+# release-notes logic the component repos run via component-versioning.yml.)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  version-and-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version bumped and release notes updated
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          base="origin/${{ github.base_ref }}"
+          extract() { grep -m1 -iE 'project[ \t]*\(.*VERSION' | sed -nE 's/.*VERSION[ \t]+([0-9]+(\.[0-9]+)*).*/\1/p'; }
+          new_ver=$(extract < CMakeLists.txt)
+          old_ver=$(git show "$base:CMakeLists.txt" | extract || true)
+          echo "version: ${old_ver:-<none>} -> ${new_ver:-<none>}"
+          [ -n "$new_ver" ] || { echo "::error::no project(... VERSION ...) found in CMakeLists.txt"; exit 1; }
+          [ "$new_ver" != "$old_ver" ] || { echo "::error::stack project VERSION not bumped (still $new_ver)"; exit 1; }
+          if git diff --quiet "$base"...HEAD -- RELEASE-NOTES.md; then
+            echo "::error::RELEASE-NOTES.md was not updated in this PR"; exit 1
+          fi

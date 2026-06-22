@@ -62,6 +62,13 @@ INSTALLATION
 Run the included 'Install' script using the Commodore Installer tool
 (v43.3 or later, included with AmigaOS 3.1.4+).
 
+Pick the drivers you want from the checklist; the installer pulls in the
+libraries they need automatically, so you cannot end up with a driver whose
+library is missing. It never downgrades a newer copy already on your system -
+if an equal or newer version is installed, it asks before replacing it.
+gic400.library is skipped automatically when a copy is already resident in ROM
+or an expansion module.
+
 Manual installation: copy files to the destinations listed above and reboot.
 
 
@@ -83,4 +90,8 @@ SOURCE CODE
 LICENSE
 -------
 
-See individual component repositories for license information.
+Each component is covered by its own license (GPL-2.0 or MPL-2.0/GPL-2.0+).
+A summary is in the 'Licenses' file at the top of this archive; the full text
+for every component is in the 'Documentation' drawer, one sub-drawer per
+component (with its README and release notes). Per-file SPDX headers in the
+sources are authoritative.

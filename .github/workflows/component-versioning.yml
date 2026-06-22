@@ -1,0 +1,93 @@
+name: Component versioning
+
+# Reusable workflow for the stack's component repos. Components do NOT publish
+# GitHub Releases — instead:
+#   * on a pull request, the change is gated on three checks: the CMake
+#     project(... VERSION ...) is bumped, RELEASE-NOTES.md is updated, and the
+#     component compiles cleanly *inside the stack*;
+#   * on a push to main, the v<version> tag is auto-created. That tag is the stable
+#     point this repo's submodule pointer in emu68-driver-stack tracks.
+#
+# Each component repo calls this with a tiny caller workflow, passing the stack's
+# CMake source-dir override variable for that component, e.g.:
+#
+#   jobs:
+#     versioning:
+#       uses: rondoval/emu68-driver-stack/.github/workflows/component-versioning.yml@main
+#       with:
+#         source_dir_var: EMU68_XHCI_SOURCE_DIR
+
+on:
+  workflow_call:
+    inputs:
+      source_dir_var:
+        description: "Stack CMake source-dir override for this component (e.g. EMU68_XHCI_SOURCE_DIR)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  pr-gate:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      # The stack is the working tree docker-build.sh mounts into the container,
+      # so it is checked out at the workspace root; the component PR goes in a
+      # sub-dir (also under the mount) and overrides the stack's source dir.
+      - name: Checkout the stack (superbuild + pinned deps)
+        uses: actions/checkout@v4
+        with:
+          repository: rondoval/emu68-driver-stack
+          ref: main
+          submodules: recursive
+
+      - name: Checkout this component's PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          path: _pr_component
+
+      - name: Version bumped and release notes updated
+        working-directory: _pr_component
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          base="origin/${{ github.base_ref }}"
+          extract() { grep -m1 -iE 'project[ \t]*\(.*VERSION' | sed -nE 's/.*VERSION[ \t]+([0-9]+(\.[0-9]+)*).*/\1/p'; }
+          new_ver=$(extract < CMakeLists.txt)
+          old_ver=$(git show "$base:CMakeLists.txt" | extract || true)
+          echo "version: ${old_ver:-<none>} -> ${new_ver:-<none>}"
+          [ -n "$new_ver" ] || { echo "::error::no project(... VERSION ...) found in CMakeLists.txt"; exit 1; }
+          [ "$new_ver" != "$old_ver" ] || { echo "::error::project VERSION not bumped (still $new_ver)"; exit 1; }
+          if git diff --quiet "$base"...HEAD -- RELEASE-NOTES.md; then
+            echo "::error::RELEASE-NOTES.md was not updated in this PR"; exit 1
+          fi
+
+      - name: Build the component inside the stack
+        run: ./scripts/docker-build.sh
+        env:
+          # /work is the container mount of the stack root; _pr_component sits under it.
+          EMU68_CONFIGURE_ARGS: "-D${{ inputs.source_dir_var }}=/work/_pr_component"
+
+  tag:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create v<version> tag if it does not exist
+        run: |
+          set -euo pipefail
+          ver=$(grep -m1 -iE 'project[ \t]*\(.*VERSION' CMakeLists.txt \
+            | sed -nE 's/.*VERSION[ \t]+([0-9]+(\.[0-9]+)*).*/\1/p')
+          [ -n "$ver" ] || { echo "::error::no project(... VERSION ...) found in CMakeLists.txt"; exit 1; }
+          tag="v$ver"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "tag $tag already exists — nothing to do"
+          else
+            git tag "$tag"
+            git push origin "$tag"
+            echo "created and pushed $tag"
+          fi

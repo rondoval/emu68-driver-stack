@@ -88,20 +88,23 @@ endif()
 function(add_stack_project target source_dir)
     set(options)
     set(oneValueArgs)
-    set(multiValueArgs DEPENDS EXTRA_CMAKE_ARGS)
+    set(multiValueArgs DEPENDS)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-    # Turn the stack-wide EMU68_DEBUG_HIGH component list into this component's
-    # boolean.  Only pass it to debug-emitting components (those that consume
-    # emu68-common's debug.h); handing it to the others (devicetree.resource/
-    # mailbox.resource) trips CMake's "unused variable" warning.
-    set(_debug_high_arg "")
+    # Debug args only apply to debug-emitting components (those that consume
+    # emu68-common's debug.h): the stack-wide backend, plus this component's
+    # EMU68_DEBUG_HIGH boolean derived from the stack-wide component list.
+    # devicetree.resource/mailbox.resource get neither — passing them would trip
+    # CMake's "unused variable" warning.
+    set(_debug_args "")
     if(target IN_LIST EMU68_DEBUG_COMPONENTS)
         set(_debug_high OFF)
         if(EMU68_DEBUG_HIGH STREQUAL "ALL" OR target IN_LIST EMU68_DEBUG_HIGH)
             set(_debug_high ON)
         endif()
-        set(_debug_high_arg -DEMU68_DEBUG_HIGH:BOOL=${_debug_high})
+        set(_debug_args
+            -DEMU68_DEBUG_BACKEND:STRING=${EMU68_DEBUG_BACKEND}
+            -DEMU68_DEBUG_HIGH:BOOL=${_debug_high})
     endif()
 
     ExternalProject_Add(${target}
@@ -112,8 +115,7 @@ function(add_stack_project target source_dir)
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${EMU68_DRIVER_STACK_TOOLCHAIN_FILE}
             -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
-            ${_debug_high_arg}
-            ${STACK_EXTRA_CMAKE_ARGS}
+            ${_debug_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
         DEPENDS ${STACK_DEPENDS}
@@ -123,33 +125,25 @@ function(add_stack_project target source_dir)
         CONFIGURE_HANDLED_BY_BUILD TRUE
         BUILD_ALWAYS TRUE
     )
+
+    # Record the target so the aggregate 'stack' target can depend on the full
+    # set without a hand-maintained list that has to be kept in sync.
+    set_property(GLOBAL APPEND PROPERTY EMU68_STACK_TARGETS ${target})
 endfunction()
 
-# Propagate the debug backend to every component that emits debug output (i.e.
-# uses emu68-common's debug.h). devicetree.resource/mailbox.resource don't.
-set(EMU68_DEBUG_ARGS EXTRA_CMAKE_ARGS -DEMU68_DEBUG_BACKEND:STRING=${EMU68_DEBUG_BACKEND})
-
-# Add all stack projects
+# Add all stack projects.  Debug-emitting components additionally receive the
+# stack-wide debug backend/level args, handled inside add_stack_project().
 add_stack_project(devicetree.resource "${DEVICETREE_RESOURCE_SOURCE_DIR}")
 add_stack_project(mailbox.resource "${MAILBOX_RESOURCE_SOURCE_DIR}" DEPENDS devicetree.resource)
-add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource ${EMU68_DEBUG_ARGS})
-add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource emu68-common ${EMU68_DEBUG_ARGS})
-add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library ${EMU68_DEBUG_ARGS})
-add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library ${EMU68_DEBUG_ARGS})
-add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library ${EMU68_DEBUG_ARGS})
-add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common ${EMU68_DEBUG_ARGS})
+add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource)
+add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource emu68-common)
+add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
+add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library)
+add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
+add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
 
-add_custom_target(stack ALL
-    DEPENDS
-        devicetree.resource
-        mailbox.resource
-        emu68-common
-        emu68-gic400-library
-        emu68-pcie-library
-        emu68-xhci-driver
-        emu68-genet-driver
-        emu68-nvme-driver
-)
+get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
+add_custom_target(stack ALL DEPENDS ${_stack_targets})
 
 # ---------------------------------------------------------------------------
 # package target — creates emu68-drivers-<version>.lha for distribution.
@@ -173,12 +167,25 @@ function(emu68_read_version out path)
     set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
 endfunction()
 
+emu68_read_version(COMMON_VERSION  "${EMU68_COMMON_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GIC400_VERSION  "${EMU68_GIC400_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(BCMPCIE_VERSION "${EMU68_PCIE_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(OPENPCI_VERSION "${EMU68_PCIE_SOURCE_DIR}/openpci.library/CMakeLists.txt")
 emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GENET_VERSION   "${EMU68_GENET_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
+
+# Components whose README + LICENSE + release notes are bundled into the archive
+# under Documentation/<name>/, and listed in the generated root 'Licenses' file.
+# Fields: drawer-name | source dir | license summary | version variable.
+# devicetree.resource / mailbox.resource are build-only and intentionally omitted.
+set(EMU68_DOC_COMPONENTS
+    "emu68-common|${EMU68_COMMON_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|COMMON_VERSION"
+    "emu68-gic400-library|${EMU68_GIC400_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|GIC400_VERSION"
+    "emu68-pcie-library|${EMU68_PCIE_SOURCE_DIR}|GPL-2.0 (bcmpcie/openpci/lspci)|BCMPCIE_VERSION"
+    "emu68-xhci-driver|${EMU68_XHCI_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
+    "emu68-genet-driver|${EMU68_GENET_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
+    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION")
 
 # Describe the debug backend for the generated ReadMe so each archive is
 # self-describing about which build variant it is.
@@ -245,6 +252,47 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
   openpci.library   ${OPENPCI_VERSION}
 ")
 
+# Root 'Licenses' summary — one entry per bundled component plus a binary->component
+# map, so the archive is self-describing about licensing.  Versions reuse the
+# values harvested above (single source of truth); per-file SPDX headers remain
+# authoritative.
+set(_licenses
+"emu68 Driver Stack ${PACKAGE_VERSION} - component licenses\n\nEach component is covered by its own license; the full text ships in\nDocumentation/<component>/LICENSE.  Per-file SPDX headers are authoritative.\n\n")
+foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
+    string(REPLACE "|" ";" _parts "${_entry}")
+    list(GET _parts 0 _name)
+    list(GET _parts 2 _lic)
+    list(GET _parts 3 _vervar)
+    string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
+endforeach()
+string(APPEND _licenses
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device       -> emu68-xhci-driver\n  genet.device      -> emu68-genet-driver\n  genet-stats       -> emu68-genet-driver\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
+file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
+
+# Per-component documentation copy commands for the package target.  Each component
+# contributes its LICENSE, README(s) and release notes to Documentation/<name>/.
+# Developer-only README-internal.md is excluded; the file globs are resolved at
+# configure time, so re-run CMake after adding a component doc file.
+set(_doc_cmds)
+foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
+    string(REPLACE "|" ";" _parts "${_entry}")
+    list(GET _parts 0 _name)
+    list(GET _parts 1 _dir)
+    set(_dest "${PACKAGE_STAGE}/Documentation/${_name}")
+    list(APPEND _doc_cmds COMMAND ${CMAKE_COMMAND} -E make_directory "${_dest}")
+    if(EXISTS "${_dir}/LICENSE")
+        list(APPEND _doc_cmds COMMAND ${CMAKE_COMMAND} -E copy "${_dir}/LICENSE" "${_dest}/LICENSE")
+    endif()
+    file(GLOB _docs "${_dir}/README.md" "${_dir}/README-*.md" "${_dir}/RELEASE-NOTES*.md")
+    foreach(_f IN LISTS _docs)
+        get_filename_component(_fn "${_f}" NAME)
+        if(_fn STREQUAL "README-internal.md")
+            continue()
+        endif()
+        list(APPEND _doc_cmds COMMAND ${CMAKE_COMMAND} -E copy "${_f}" "${_dest}/${_fn}")
+    endforeach()
+endforeach()
+
 add_custom_target(package
     DEPENDS stack
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${PACKAGE_STAGE}"
@@ -265,6 +313,13 @@ add_custom_target(package
         "${CMAKE_BINARY_DIR}/installer/Install" "${PACKAGE_STAGE}/Install"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_BINARY_DIR}/installer/ReadMe" "${PACKAGE_STAGE}/ReadMe"
+    # Bundle each component's README/LICENSE/release notes under Documentation/,
+    # plus the top-level changelog and the generated license summary at the root.
+    ${_doc_cmds}
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/RELEASE-NOTES.md" "${PACKAGE_STAGE}/RELEASE-NOTES.md"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_BINARY_DIR}/installer/Licenses" "${PACKAGE_STAGE}/Licenses"
     # Create the LHA archive (chdir so paths inside are relative to the package root)
     COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_ARCHIVE}"
     COMMAND ${CMAKE_COMMAND} -E chdir "${PACKAGE_DIR}"
