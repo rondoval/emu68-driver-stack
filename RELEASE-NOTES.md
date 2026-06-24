@@ -1,8 +1,10 @@
-# Release notes — Emu68 driver stack 1.0.1
+# Release notes — Emu68 driver stack 1.0.2
 
 First packaged release of the full driver stack for PiStorm/Emu68 on the Raspberry Pi 4B / CM4.
-The stack is built and distributed as a single `emu68-drivers-1.0.1.lha` archive with an
+The stack is built and distributed as a single `emu68-drivers-1.0.2.lha` archive with an
 Installer script.
+
+Maintenance update: GitHub Actions workflows now use `actions/checkout@v7`.
 
 This document is the top-level summary; each component ships its own detailed
 release notes (linked below).
@@ -113,7 +115,7 @@ Build and install the whole stack, then package it:
 ```sh
 cmake -S . -B build
 cmake --build build
-cmake --build build --target package   # -> build/package/emu68-drivers-1.0.1.lha
+cmake --build build --target package   # -> build/package/emu68-drivers-1.0.2.lha
 ```
 
 No local toolchain? Use `./scripts/docker-build.sh --target package` instead, which
