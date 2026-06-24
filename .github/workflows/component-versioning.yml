@@ -37,14 +37,14 @@ jobs:
       # so it is checked out at the workspace root; the component PR goes in a
       # sub-dir (also under the mount) and overrides the stack's source dir.
       - name: Checkout the stack (superbuild + pinned deps)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: rondoval/emu68-driver-stack
           ref: main
           submodules: recursive
 
       - name: Checkout this component's PR
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: recursive
@@ -76,7 +76,7 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Create v<version> tag if it does not exist
         run: |
           set -euo pipefail
