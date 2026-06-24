@@ -7,23 +7,98 @@
 
 (set #emu68-version "@PACKAGE_VERSION@")
 
+; A system-wide install spread across LIBS:, DEVS: and C:; there is no single
+; application directory.  Point @default-dest at SYS: so the Installer's closing
+; report reads sensibly.
+(set @default-dest "SYS:")
+
+; Require Installer v43.3+ (askoptions, copylib-style version checking, IN).
+; 2818051 = (43 << 16) | 3.
+(if (< @installer-version 2818051)
+    (
+        (message
+            (cat
+                "This installer requires Commodore Installer v43.3 or later.\n"
+                "Please update the Installer tool and try again."
+            )
+            (all)
+        )
+        (exit (quiet))
+    )
+)
+
+; ---------------------------------------------------------------------------
+; Helper procedures
+; ---------------------------------------------------------------------------
+
+; P_copyver - install one versioned file (library or device) safely.
+; Upgrades automatically when the bundled copy is newer; if an equal or newer
+; copy is already installed, asks before replacing it.  getversion returns 0 for
+; a missing file, so a fresh install always copies.  (optional "force") clears a
+; delete-protected destination left by a previous install.
+; Returns 1 when it (re)installed the file, 0 when it kept the existing copy -
+; callers use this to keep the paired CLI tool in lockstep with the binary.
+(procedure P_copyver #cv_src #cv_destdir #cv_name
+    (set #cv_dest (tackon #cv_destdir #cv_name))
+    (set #cv_do 1)
+    (if (exists #cv_dest (noreq))
+        (if (>= (getversion #cv_dest) (getversion #cv_src))
+            (set #cv_do
+                (askbool
+                    (prompt
+                        (cat
+                            "An equal or newer " #cv_name "\n"
+                            "is already installed in " #cv_destdir "\n\n"
+                            "Replace it with the bundled version?"
+                        )
+                    )
+                    (help @copylib-help)
+                    (default 0)
+                )
+            )
+        )
+    )
+    (if #cv_do
+        (copyfiles
+            (prompt (cat "Installing " #cv_name "..."))
+            (help @copylib-help)
+            (source #cv_src)
+            (dest #cv_destdir)
+            (optional "force")
+        )
+    )
+    ; Procedure return value: 1 if we copied, 0 if we kept the existing file.
+    #cv_do
+)
+
+; P_copytool - install a CLI tool to C: (always overwrites; no version check).
+; Callers invoke this only when the paired driver/library was actually
+; (re)installed (see P_copyver's return value), so the tool stays in lockstep
+; with the binary it talks to instead of being silently downgraded on its own.
+(procedure P_copytool #ct_src #ct_destdir
+    (copyfiles
+        (prompt (cat "Installing " (fileonly #ct_src) "..."))
+        (help @copyfiles-help)
+        (source #ct_src)
+        (dest #ct_destdir)
+        (optional "force")
+    )
+)
+
 ; ---------------------------------------------------------------------------
 ; Welcome
 ; ---------------------------------------------------------------------------
 (message
     (cat
         "Welcome to the emu68 Driver Stack installer.\n\n"
-        "This package installs AmigaOS drivers for Raspberry Pi 4 / CM4\n"
-        "running Emu68:\n\n"
-        "  \x95 gic400.library  \x97 ARM GIC-400 interrupt controller\n"
-        "  \x95 bcmpcie.library  \x97 BCM2711 PCIe bus library\n"
-        "  \x95 xhci.device     \x97 USB 3.0 (VIA VL805)\n"
-        "  \x95 genet.device    \x97 Gigabit Ethernet\n"
-        "  \x95 genet-stats      \x97 Ethernet statistics viewer\n"
-        "  \x95 nvme.device     \x97 NVMe storage driver\n"
-        "  \x95 nvmeinfo/nvmeadm \x97 NVMe diagnostic & admin tools\n"
-        "  \x95 openpci.library \x97 PCIe Compatibility shim (optional)\n"
-        "  \x95 lspci           \x97 PCIe diagnostic tool (optional)\n\n"
+        "This package installs AmigaOS drivers for RPI4/CM4\n\n"
+        "  * gic400.library   - ARM GIC-400 interrupt controller\n"
+        "  * bcmpcie.library  - BCM2711 PCIe bus library\n"
+        "  * xhci.device      - USB 2.0/3.0 XHCI\n"
+        "  * genet.device     - Gigabit Ethernet (+ genet-stats)\n"
+        "  * nvme.device      - NVMe storage (+ nvmeinfo, nvmeadm)\n"
+        "  * openpci.library  - compatibility shim (optional)\n"
+        "  * lspci            - PCIe diagnostic tool (optional)\n\n"
         "Version: " #emu68-version
     )
     (all)
@@ -31,261 +106,226 @@
 
 ; ---------------------------------------------------------------------------
 ; Component selection
+;
+; gic400.library and bcmpcie.library can be ticked to install them on their own
+; (for other PCIe software), but any selected driver pulls in the libraries it
+; needs automatically - you can never end up with a driver whose library is
+; missing.  The library boxes therefore default OFF: leave them unticked and the
+; drivers bring the libraries along.
 ; ---------------------------------------------------------------------------
 
-; gic400.library — required by everything else.
-; If a copy is already resident in ROM or an expansion module, skip the disk
-; install: the drivers open the resident one. (getversion ... (resident)) scans
-; the Kickstart resident-module list and returns 0 when no resident copy exists.
+; Probe for a resident gic400.library (ROM or expansion module).  When present,
+; the drivers open that copy and we skip the LIBS: install unless the user asks
+; for it explicitly.  (getversion ... (resident)) returns 0 when none is resident.
 (set #gic400-rom (getversion "gic400.library" (resident)))
-(if (> #gic400-rom 0)
-    (
-        (set #install-gic400 0)
-        (message
-            (cat
-                "gic400.library is already present in ROM or an expansion\n"
-                "resident module \x97 skipping its installation to LIBS:.\n\n"
-                "The PCIe and network drivers will use the resident copy."
+
+; Bit layout of the selection mask:
+;   0 gic400.library  1 bcmpcie.library  2 xhci  3 genet  4 nvme  5 lspci
+; Default 60 = bits 2..5 (all drivers + lspci); libraries derived as needed.
+(if (= @user-level 0)
+    (set #features 60)                       ; NOVICE: install the recommended set silently
+    (set #features
+        (askoptions
+            (prompt "Select the components to install:")
+            (help
+                "The drivers (xhci, genet, nvme) and lspci are ticked by default.\n\n"
+                "gic400.library and bcmpcie.library are required by the drivers and\n"
+                "are installed automatically when you select one - tick them only if\n"
+                "you want a library on its own, without any driver.\n\n"
+                @askoptions-help
             )
+            (choices
+                "gic400.library  (interrupt controller)"
+                "bcmpcie.library (PCIe bus)"
+                "xhci.device     (USB 3.0)"
+                "genet.device    (Gigabit Ethernet)"
+                "nvme.device     (NVMe storage)"
+                "lspci           (PCIe diagnostic tool)"
+            )
+            (default 60)
         )
     )
-    ; else: no resident copy — offer to install it to LIBS:
-    (set #install-gic400
+)
+
+(set #sel-gic400    (IN #features 0))
+(set #sel-bcmpcie   (IN #features 1))
+(set #install-xhci  (IN #features 2))
+(set #install-genet (IN #features 3))
+(set #install-nvme  (IN #features 4))
+(set #install-lspci (IN #features 5))
+
+; openpci.library - optional, off by default, never offered to a NOVICE.
+(if (= @user-level 0)
+    (set #install-openpci 0)
+    (set #install-openpci
         (askbool
             (prompt
                 (cat
-                    "Install gic400.library?\n\n"
-                    "This library manages the ARM GIC-400 interrupt controller.\n"
-                    "It is required by xhci.device, genet.device, and bcmpcie.library."
+                    "Install openpci.library? (optional)\n\n"
+                    "A compatibility shim for software that opens 'openpci.library'\n"
+                    "by name.  It forwards calls to bcmpcie.library.\n\n"
+                    "WARNING: Do NOT install if you have a real PCI expansion board\n"
+                    "(Mediator, Prometheus, G-REX, ...) - the name clash will\n"
+                    "break that board's own driver."
                 )
             )
             (help
-                "gic400.library must be present in LIBS: for the PCIe and\n"
-                "network drivers to function."
+                "openpci.library is only needed for legacy software that calls\n"
+                "OpenLibrary(\"openpci.library\", ...) and expects the classic\n"
+                "openpci API.  New software should use bcmpcie.library directly."
             )
-            (default 1)
+            (default 0)
         )
     )
 )
 
-; bcmpcie.library
-(set #install-bcmpcie
-    (askbool
-        (prompt
+; ---------------------------------------------------------------------------
+; Dependency resolution (union of explicit selection and derived needs)
+; ---------------------------------------------------------------------------
+(set #need-bcmpcie (OR #sel-bcmpcie #install-xhci #install-nvme #install-lspci #install-openpci))
+(set #any-component (OR #need-bcmpcie #install-genet #sel-gic400))
+
+; gic400 is needed by every driver; install it from disk only when no resident
+; copy exists, unless the user ticked it explicitly.
+(set #install-gic400 (OR #sel-gic400 (AND #any-component (= #gic400-rom 0))))
+
+; Nothing selected at all - nothing to do.
+(if (NOT #any-component)
+    (
+        (message
             (cat
-                "Install bcmpcie.library?\n\n"
-                "Provides access to the BCM2711 PCIe bus.\n"
-                "Required by xhci.device and any future PCIe driver."
+                "No components were selected, so nothing has been installed.\n\n"
+                "Run the installer again and tick at least one component."
             )
         )
-        (help
-            "bcmpcie.library initialises the PCIe controller, enumerates\n"
-            "devices, and provides the driver API. Install it unless you\n"
-            "are certain no PCIe drivers are needed."
-        )
-        (default 1)
+        (exit (quiet))
     )
 )
 
-; xhci.device
-(set #install-xhci
-    (askbool
-        (prompt
-            (cat
-                "Install xhci.device?\n\n"
-                "USB 3.0 host controller driver for the VIA VL805 chip\n"
-                "found on every Raspberry Pi 4 board."
-            )
+; A dependent needs gic400, a resident copy already exists, and the user did not
+; explicitly ask for the LIBS: copy - tell them we are using the resident one.
+(if (AND (> #gic400-rom 0) (NOT #sel-gic400))
+    (message
+        (cat
+            "gic400.library is already present in ROM or an\n"
+            "expansion resident module - using that copy and\n"
+            "skipping the LIBS: install.\n\n"
+            "The PCIe and network drivers will open the resident library."
         )
-        (help
-            "xhci.device provides USB support via the Poseidon USB stack.\n"
-            "It requires bcmpcie.library and gic400.library."
-        )
-        (default 1)
     )
 )
 
-; genet.device
-(set #install-genet
-    (askbool
-        (prompt
-            (cat
-                "Install genet.device?\n\n"
-                "Gigabit Ethernet SANA-II driver for the BCM54213 controller\n"
-                "built into the Raspberry Pi 4 / CM4."
-            )
-        )
-        (help
-            "genet.device provides Ethernet via the standard SANA-II interface.\n"
-            "It requires gic400.library."
-        )
-        (default 1)
+; ---------------------------------------------------------------------------
+; Disk-space check (safety net - the binaries are small)
+; ---------------------------------------------------------------------------
+(set #need-libs 0)
+(set #need-devs 0)
+(set #need-c 0)
+(if #install-gic400  (set #need-libs (+ #need-libs (getsize "LIBS/gic400.library"))))
+(if #need-bcmpcie    (set #need-libs (+ #need-libs (getsize "LIBS/bcmpcie.library"))))
+(if #install-openpci (set #need-libs (+ #need-libs (getsize "LIBS/openpci.library"))))
+(if #install-xhci    (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci.device"))))
+(if #install-genet
+    (
+        (set #need-devs (+ #need-devs (getsize "DEVS/Networks/genet.device")))
+        (set #need-c    (+ #need-c (getsize "C/genet-stats")))
     )
 )
-
-; nvme.device
-(set #install-nvme
-    (askbool
-        (prompt
-            (cat
-                "Install nvme.device?\n\n"
-                "NVMe storage driver for PCIe-attached NVMe SSDs."
-            )
-        )
-        (help
-            "nvme.device provides block-storage access to supported NVMe drives.\n"
-            "It requires bcmpcie.library and gic400.library."
-        )
-        (default 1)
+(if #install-nvme
+    (
+        (set #need-devs (+ #need-devs (getsize "DEVS/nvme.device")))
+        (set #need-c    (+ #need-c (getsize "C/nvmeinfo")))
+        (set #need-c    (+ #need-c (getsize "C/nvmeadm")))
     )
 )
+(if #install-lspci   (set #need-c (+ #need-c (getsize "C/lspci"))))
 
-; openpci.library — optional, off by default
-(set #install-openpci
-    (askbool
-        (prompt
-            (cat
-                "Install openpci.library? (optional)\n\n"
-                "A compatibility shim for software that opens 'openpci.library'\n"
-                "by name. It forwards calls to bcmpcie.library.\n\n"
-                "WARNING: Do NOT install if you have a real PCI expansion board\n"
-                "(Mediator, Prometheus, G-REX, ...) \x97 the name clash will\n"
-                "break that board's own driver."
-            )
-        )
-        (help
-            "openpci.library is only needed for legacy software that calls\n"
-            "OpenLibrary(\"openpci.library\", ...) and expects the classic\n"
-            "openpci API. New software should use bcmpcie.library directly."
-        )
-        (default 0)
-    )
+; getdiskspace returns -1 when it cannot tell; only abort on a real shortfall.
+(set #free (getdiskspace "LIBS:"))
+(if (AND (> #need-libs 0) (AND (>= #free 0) (< #free #need-libs)))
+    (abort "Not enough free space in LIBS: to install the selected libraries.")
 )
-
-; lspci
-(set #install-lspci
-    (askbool
-        (prompt
-            (cat
-                "Install lspci? (optional)\n\n"
-                "A CLI diagnostic tool that lists all devices on the PCIe bus.\n"
-                "Useful for verifying that the PCIe link is up and devices\n"
-                "are enumerated correctly.\n\n"
-                "Installed to C:lspci."
-            )
-        )
-        (help
-            "Run 'lspci' from a Shell to see connected PCIe devices.\n"
-            "Requires bcmpcie.library."
-        )
-        (default 1)
-    )
+(set #free (getdiskspace "DEVS:"))
+(if (AND (> #need-devs 0) (AND (>= #free 0) (< #free #need-devs)))
+    (abort "Not enough free space in DEVS: to install the selected drivers.")
+)
+(set #free (getdiskspace "C:"))
+(if (AND (> #need-c 0) (AND (>= #free 0) (< #free #need-c)))
+    (abort "Not enough free space in C: to install the selected tools.")
 )
 
 ; ---------------------------------------------------------------------------
 ; Installation
 ; ---------------------------------------------------------------------------
+(complete 0)
 
-(if (= #install-gic400 1)
-    (
-        (copyfiles
-            (source "LIBS/gic400.library")
-            (dest   "LIBS:")
-            (prompt "Copying gic400.library...")
-        )
-    )
-)
+; Track whether bcmpcie.library was actually (re)installed, so lspci can follow it
+; (selecting lspci forces #need-bcmpcie, so this is always set when lspci is on).
+(set #did-bcmpcie 0)
 
-(if (= #install-bcmpcie 1)
-    (
-        (copyfiles
-            (source "LIBS/bcmpcie.library")
-            (dest   "LIBS:")
-            (prompt "Copying bcmpcie.library...")
-        )
-    )
-)
+; Libraries -> LIBS:
+(if #install-gic400  (P_copyver "LIBS/gic400.library"  "LIBS:" "gic400.library"))
+(if #need-bcmpcie    (set #did-bcmpcie (P_copyver "LIBS/bcmpcie.library" "LIBS:" "bcmpcie.library")))
+(if #install-openpci (P_copyver "LIBS/openpci.library" "LIBS:" "openpci.library"))
+(complete 40)
 
-(if (= #install-xhci 1)
+; Devices -> DEVS:
+(if #install-xhci
     (
         (makedir "DEVS:USBHardware")
-        (copyfiles
-            (source "DEVS/USBHardware/xhci.device")
-            (dest   "DEVS:USBHardware/")
-            (prompt "Copying xhci.device...")
-        )
+        (P_copyver "DEVS/USBHardware/xhci.device" "DEVS:USBHardware" "xhci.device")
     )
 )
-
-(if (= #install-genet 1)
+(if #install-genet
     (
         (makedir "DEVS:Networks")
-        (copyfiles
-            (source "DEVS/Networks/genet.device")
-            (dest   "DEVS:Networks/")
-            (prompt "Copying genet.device...")
-        )
-        ; genet-stats — SANA-II statistics viewer for genet.device.
-        ; Installed alongside the driver to C:.
-        (copyfiles
-            (source "C/genet-stats")
-            (dest   "C:")
-            (prompt "Copying genet-stats...")
-        )
+        (set #did-genet (P_copyver "DEVS/Networks/genet.device" "DEVS:Networks" "genet.device"))
+        ; genet-stats - SANA-II statistics viewer, kept in lockstep with the driver.
+        (if #did-genet (P_copytool "C/genet-stats" "C:"))
     )
 )
-
-(if (= #install-nvme 1)
+(if #install-nvme
     (
-        (copyfiles
-            (source "DEVS/nvme.device")
-            (dest   "DEVS:")
-            (prompt "Copying nvme.device...")
-        )
-        ; nvmeinfo / nvmeadm — diagnostic and admin CLI tools for nvme.device.
-        ; Installed alongside the driver to C:.
-        (copyfiles
-            (source "C/nvmeinfo")
-            (dest   "C:")
-            (prompt "Copying nvmeinfo...")
-        )
-        (copyfiles
-            (source "C/nvmeadm")
-            (dest   "C:")
-            (prompt "Copying nvmeadm...")
+        (set #did-nvme (P_copyver "DEVS/nvme.device" "DEVS:" "nvme.device"))
+        ; nvmeinfo / nvmeadm - diagnostic and admin tools, kept in lockstep with the driver.
+        (if #did-nvme
+            (
+                (P_copytool "C/nvmeinfo" "C:")
+                (P_copytool "C/nvmeadm" "C:")
+            )
         )
     )
 )
+(complete 80)
 
-(if (= #install-openpci 1)
-    (
-        (copyfiles
-            (source "LIBS/openpci.library")
-            (dest   "LIBS:")
-            (prompt "Copying openpci.library...")
-        )
+; Diagnostic tool -> C:.  Keep lspci in lockstep with bcmpcie.library: (re)install
+; it when bcmpcie was just (re)installed, or when no lspci exists yet (honour an
+; explicit selection).  Skip only when bcmpcie was kept AND an lspci already
+; exists - that existing tool pairs with the library we left in place.
+(if #install-lspci
+    (if (OR #did-bcmpcie (NOT (exists "C:lspci" (noreq))))
+        (P_copytool "C/lspci" "C:")
     )
 )
-
-(if (= #install-lspci 1)
-    (
-        (copyfiles
-            (source "C/lspci")
-            (dest   "C:")
-            (prompt "Copying lspci...")
-        )
-    )
-)
+(complete 100)
 
 ; ---------------------------------------------------------------------------
 ; Done
 ; ---------------------------------------------------------------------------
-(message
+(set #done-msg
     (cat
         "Installation complete.\n\n"
-        "The emu68 drivers are now installed. If your Amiga is already\n"
-        "running, a reboot is required for the new drivers to take effect.\n\n"
-        "See the ReadMe file for usage notes and version history."
+        "The emu68 drivers are now installed.  If your Amiga is already\n"
+        "running, a reboot is required for the new drivers to take effect."
     )
-    (all)
 )
+(if #install-genet
+    (set #done-msg
+        (cat #done-msg
+            "\n\ngenet.device is a SANA-II driver: point a TCP/IP stack such as\n"
+            "Roadshow at 'genet.device' unit 0 before it can carry network traffic."
+        )
+    )
+)
+(set #done-msg (cat #done-msg "\n\nSee the ReadMe file for usage notes and version history."))
+(message #done-msg (all))
