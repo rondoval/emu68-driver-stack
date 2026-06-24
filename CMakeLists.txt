@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 1.0.2 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 1.0.3 LANGUAGES NONE)
 
 include(ExternalProject)
 
