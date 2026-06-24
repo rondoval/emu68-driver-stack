@@ -33,7 +33,7 @@ jobs:
           EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=serial"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "emu68 Driver Stack ${{ github.ref_name }}"
           files: |
