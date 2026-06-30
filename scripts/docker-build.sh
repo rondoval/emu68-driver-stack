@@ -2,9 +2,10 @@
 # Build the driver stack inside the Amiga cross-toolchain container.
 #
 # No local m68k-amigaos toolchain is required: this runs the same image CI uses,
-# which ships the cross-compiler at /opt/m68k-amigaos and the `lha` archiver used
-# by the `package` target.  The image tag lives here and nowhere else, so the
-# wrapper and CI stay in lock-step.
+# which ships the cross-compiler at /opt/m68k-amigaos (a symlink to /opt/amiga in the
+# shared rondoval/amiga-build-container image, built on stefanreinauer/amiga-gcc with
+# NDK 3.2) and the `lha` archiver used by the `package` target.  The image tag lives
+# here and nowhere else, so the wrapper and CI stay in lock-step.
 #
 # Usage:
 #   scripts/docker-build.sh                 # configure + build the whole stack
@@ -18,14 +19,14 @@
 #
 # Any arguments are forwarded to `cmake --build <build dir> <args>`.
 # Environment overrides:
-#   EMU68_BUILD_IMAGE     Toolchain image tag (default: amigadev/crosstools:m68k-amigaos)
+#   EMU68_BUILD_IMAGE     Toolchain image tag (default: ghcr.io/rondoval/amiga-build-container:latest)
 #   EMU68_CONFIGURE_ARGS  Extra args appended to the `cmake -S . -B <build dir>` configure step
 #   EMU68_BUILD_DIR       CMake build directory, relative to the workspace (default: build)
 #   EMU68_INSTALL_DIR     Install prefix, relative to the workspace (default: install).
 #                         The package's .lha lands in <EMU68_BUILD_DIR>/package/.
 set -euo pipefail
 
-IMAGE=${EMU68_BUILD_IMAGE:-"amigadev/crosstools:m68k-amigaos"}
+IMAGE=${EMU68_BUILD_IMAGE:-"ghcr.io/rondoval/amiga-build-container:latest"}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STACK_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
