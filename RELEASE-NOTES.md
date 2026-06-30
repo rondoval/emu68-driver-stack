@@ -1,9 +1,43 @@
+# Release notes — Emu68 driver stack 1.1.0
+
+Changes since 1.0.6. `xhci.device` advances to 5.2; every other component is
+unchanged. The stack ships as a single `emu68-drivers-1.1.0.lha` archive with the
+Commodore Installer script.
+
+---
+
+## Component versions in this release
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `emu68-common` (support library) | 1.6.0 | [RELEASE-NOTES.md](components/emu68-common/RELEASE-NOTES.md) |
+| `gic400.library` | 1.5 | [RELEASE-NOTES.md](components/emu68-gic400-library/RELEASE-NOTES.md) |
+| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
+| `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
+| `xhci.device` | **5.2** | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
+| `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
+| `nvme.device` | 1.1 | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+
+---
+
+## What changed
+
+### `xhci.device` 5.2 — USB 3.0-aware stack compatibility
+
+`xhci.device` presents SuperSpeed devices to the USB stack as high-speed through
+its USB 3.0 ↔ USB 2.0 translation layer. The device descriptor returned to the
+stack now clamps `bcdUSB` to `0x0210` for devices reporting USB 3.0 or later, so
+the advertised USB revision matches that high-speed presentation. This keeps a
+USB 3.0-aware stack — one that reads `bcdUSB` — from seeing a SuperSpeed revision
+that contradicts the device it is handed. See the
+[component notes](components/emu68-xhci-driver/RELEASE-NOTES.md) for details.
+
+
 # Release notes — Emu68 driver stack 1.0.6
 
 Changes since 1.0.5. A build-system update only — the drivers themselves are
-unchanged from 1.0.5 (every component keeps its 1.0.5 version, see the table
-below). The stack ships as a single `emu68-drivers-1.0.6.lha` archive with the
-Commodore Installer script.
+unchanged from 1.0.5 (every component keeps its 1.0.5 version). Not tagged as a
+release; superseded by 1.1.0.
 
 ---
 
