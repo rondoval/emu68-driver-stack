@@ -69,6 +69,25 @@ wrapper runs the container as your uid/gid). Pass extra configure-time options v
 `EMU68_CONFIGURE_ARGS`, e.g. `EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial"`;
 any positional arguments are forwarded to `cmake --build build`.
 
+### Developer quick loop (build + upload to a live Amiga)
+
+`./build.sh` wraps the whole edit-build-test loop: it builds (and optionally
+packages) via `scripts/docker-build.sh`, then uploads the freshly built binaries to
+a running Amiga over Cloanto Amiga Explorer (`AE.exe`, driven from WSL). With no
+flags it does build + upload.
+
+```sh
+./build.sh                       # build, then upload to the Amiga (the usual loop)
+./build.sh --build               # build only
+BACKEND=off ./build.sh --package # release build + build/package/emu68-drivers-<ver>.lha
+./build.sh --upload --dry-run    # preview the LIBS:/DEVS:/C: copy plan, copy nothing
+```
+
+Env knobs: `BACKEND=<pistorm|serial|off>`, `DEBUG_HIGH=<components|ALL>`,
+`AE=<path to AE.exe>`, `BUILD_DIR`, `INSTALL_DIR`, `BUILD_IMAGE`; run `./build.sh
+--help` for the full list. The upload copies the runtime trees only
+(`install/{LIBS,DEVS,C}`) — for a first-time/full install use the `.lha` + Installer.
+
 ## Local development — working on an individual component
 
 Override any component's source directory to point to your own checkout:

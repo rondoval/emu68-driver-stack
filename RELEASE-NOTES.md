@@ -1,3 +1,23 @@
+# Release notes — Emu68 driver stack 1.0.6
+
+Changes since 1.0.5. A build-system update only — the drivers themselves are
+unchanged from 1.0.5 (every component keeps its 1.0.5 version, see the table
+below). The stack ships as a single `emu68-drivers-1.0.6.lha` archive with the
+Commodore Installer script.
+
+---
+
+## Build & tooling
+
+The cross-toolchain build image moved to `ghcr.io/rondoval/amiga-build-container`,
+and a single top-level `build.sh` now drives the whole edit-build-test loop —
+container build, `.lha` packaging, and upload to a live Amiga over Amiga Explorer
+— behind `--build` / `--package` / `--upload` / `--dry-run` (on top of
+`scripts/docker-build.sh`, which CI shares).
+
+---
+
+
 # Release notes — Emu68 driver stack 1.0.5
 
 First public release of the full driver stack for PiStorm/Emu68 on the Raspberry
