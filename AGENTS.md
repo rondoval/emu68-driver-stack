@@ -10,18 +10,21 @@ These instructions are specific to the top-level superbuild repo.
 
 ## Build Flow
 
-- Preferred rebuild commands:
-  - `cmake -S . -B build`
-  - `cmake --build build`
-- The toolchain is expected under `/opt/m68k-amigaos`. With no local toolchain,
-  `./scripts/docker-build.sh [--target package]` builds inside the CI image
-  (`amigadev/crosstools:m68k-amigaos`); CI runs the same wrapper.
-- `package` produces `build/package/emu68-drivers-<version>.lha` (needs `lha`, which
-  the toolchain image ships). The version comes from `CMakeLists.txt` and is stamped
-  into `installer/Install`/`ReadMe`, generated from the `*.in` templates.
+- **All builds go through `./scripts/docker-build.sh` (container build). Never run
+  `cmake` on the host**: the shared `build/` cache is configured at `/work` inside
+  the container image (`ghcr.io/rondoval/amiga-build-container:latest`), so host-side
+  `cmake --build build` fails with a CMakeCache path mismatch, and a host reconfigure
+  would clobber the container cache.
+- Rebuild commands:
+  - `./scripts/docker-build.sh` (full stack)
+  - `./scripts/docker-build.sh --target <name>` (single superbuild target)
+- `--target package` produces `build/package/emu68-drivers-<version>.lha` (`lha` ships
+  in the image). The version comes from `CMakeLists.txt` and is stamped into
+  `installer/Install`/`ReadMe`, generated from the `*.in` templates.
 - The superbuild creates per-component build directories under `emu68-driver-stack/build/`; prefer this over ad hoc downstream rebuilds when interface changes are involved.
 - Debug output backend is stack-wide via `EMU68_DEBUG_BACKEND` (default `pistorm`),
-  propagated to all components: `cmake -S . -B build -DEMU68_DEBUG_BACKEND=serial`
+  propagated to all components:
+  `EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial" ./scripts/docker-build.sh`
   (`pistorm` → `0xdeadbeef` trap, ROM-able | `serial` → `debug.lib` serial @ 9600,
   not ROM-able | `off` → compiled out). See `components/emu68-common`.
 
