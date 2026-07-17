@@ -156,6 +156,26 @@ cmake -S . -B build -DEMU68_DEBUG_HIGH=ALL
 Scope it to the component you're debugging: `ALL` is noisy enough to swamp the
 debug console (and slow the hot paths) across the whole stack.
 
+## Cache-op routing
+
+`emu68-common`'s `cache_ops.h` emits its `cache_pre_dma()` / `cache_post_dma()`
+range operations inline, through a private LINE-F opcode that only a patched Emu68
+decodes.  `EMU68_FORCE_LVO_CACHE_OPS` routes them back through exec's
+`CachePreDMA` / `CachePostDMA` instead, for an Emu68 that doesn't carry the opcode:
+
+```sh
+cmake -S . -B build -DEMU68_FORCE_LVO_CACHE_OPS=ON
+```
+
+- Default is `OFF` — the inline fast path, which assumes a patched Emu68 that
+  decodes the range opcode.  An Emu68 lacking it would Line-F trap on the
+  opcode, so build against one with this `ON`.
+- Forwarded only to the components that include `cache_ops.h` —
+  `emu68-xhci-driver`, `emu68-genet-driver` and `emu68-nvme-driver`.  It has no
+  effect on the rest of the stack.
+- CI builds against a released Emu68 and so sets it `ON`; shipped binaries keep
+  the LVO path.
+
 ## Versioning
 
 Component submodule pointers in this repository always track a release tag of

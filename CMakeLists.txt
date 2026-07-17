@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 1.1.0 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 1.2.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -34,6 +34,21 @@ set(EMU68_DEBUG_COMPONENTS
     emu68-common
     emu68-gic400-library
     emu68-pcie-library
+    emu68-xhci-driver
+    emu68-genet-driver
+    emu68-nvme-driver)
+
+# Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
+# instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
+# The fast path needs a private range opcode that only a patched Emu68 build
+# understands, so CI (which builds against a released Emu68) sets this ON; local
+# builds against a patched Emu68 should leave it OFF to get the optimization.
+option(EMU68_FORCE_LVO_CACHE_OPS
+    "Route cache_pre_dma()/cache_post_dma() through the exec LVO instead of the emu68 inline fast path"
+    OFF)
+
+# Components whose sources include cache_ops.h and so need the flag above forwarded.
+set(EMU68_CACHE_OPS_COMPONENTS
     emu68-xhci-driver
     emu68-genet-driver
     emu68-nvme-driver)
@@ -107,6 +122,13 @@ function(add_stack_project target source_dir)
             -DEMU68_DEBUG_HIGH:BOOL=${_debug_high})
     endif()
 
+    # Cache-ops LVO-fallback flag only applies to components whose sources
+    # include cache_ops.h.
+    set(_cache_ops_args "")
+    if(target IN_LIST EMU68_CACHE_OPS_COMPONENTS)
+        set(_cache_ops_args -DEMU68_FORCE_LVO_CACHE_OPS:BOOL=${EMU68_FORCE_LVO_CACHE_OPS})
+    endif()
+
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
@@ -116,6 +138,7 @@ function(add_stack_project target source_dir)
             -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
             ${_debug_args}
+            ${_cache_ops_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
         DEPENDS ${STACK_DEPENDS}
@@ -304,6 +327,8 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/ENVARC" "${PACKAGE_STAGE}/ENVARC"
     # Public SDK headers for the shipped libraries (nvme, gic400, bcmpcie/openpci),
     # under Developer/include/.  proto/clib/inline/pragmas hold only these libs'
     # headers (devicetree/mailbox protos live under install/Developer/, emu68-common

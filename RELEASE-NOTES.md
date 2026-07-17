@@ -1,3 +1,48 @@
+# Release notes — Emu68 driver stack 1.2.0
+
+Changes since 1.1.0. A build-system update only — every shipped driver keeps its
+1.1.0 version; the shared `emu68-common` support library advances to 1.7.0. The
+stack ships as a single `emu68-drivers-1.2.0.lha` archive with the Commodore
+Installer script.
+
+---
+
+## Component versions in this release
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `emu68-common` (support library) | **1.7.0** | [RELEASE-NOTES.md](components/emu68-common/RELEASE-NOTES.md) |
+| `gic400.library` | 1.5 | [RELEASE-NOTES.md](components/emu68-gic400-library/RELEASE-NOTES.md) |
+| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
+| `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
+| `xhci.device` | 5.2 | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
+| `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
+| `nvme.device` | 1.1 | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+
+---
+
+## Build & tooling
+
+### `emu68-common` 1.7.0
+
+The shared support library gains the `barrier.h` and `cache_ops.h` headers and a
+standard `strncmp`, and goes back to targeting NDK 3.2 only. No driver in this
+release includes those headers yet, so the drivers are unchanged from 1.1.0.
+
+### Cache-op routing selectable at configure time
+
+`cache_ops.h` emits its DMA cache range operations inline, through a private
+LINE-F opcode that only a patched Emu68 decodes. The new
+`EMU68_FORCE_LVO_CACHE_OPS` option (default `OFF`) routes `cache_pre_dma()` /
+`cache_post_dma()` back through exec's `CachePreDMA` / `CachePostDMA` for an Emu68
+that doesn't carry the opcode, and is forwarded to the components that consume
+`cache_ops.h` — `xhci.device`, `genet.device` and `nvme.device`. CI builds set it
+`ON`, so released binaries keep the LVO path. See
+[README.md](README.md#cache-op-routing).
+
+---
+
+
 # Release notes — Emu68 driver stack 1.1.0
 
 Changes since 1.0.6. `xhci.device` advances to 5.2; every other component is
