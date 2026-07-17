@@ -1,9 +1,18 @@
-# Release notes — Emu68 driver stack 1.2.0
+# Release notes — Emu68 driver stack 1.2.1
 
-Changes since 1.1.0. A build-system update only — every shipped driver keeps its
-1.1.0 version; the shared `emu68-common` support library advances to 1.7.0. The
-stack ships as a single `emu68-drivers-1.2.0.lha` archive with the Commodore
-Installer script.
+Changes since 1.1.0. `nvme.device` advances to 1.2 (automount rework, SCSI and
+partition reliability fixes, batched DMA cache maintenance) and the shared
+`emu68-common` support library advances to 1.7.0; every other component keeps
+its 1.1.0 version. The stack ships as a single `emu68-drivers-1.2.1.lha` archive
+with the Commodore Installer script.
+
+---
+
+## Breaking changes
+
+`nvme.device` 1.2 renames automounted MBR/GPT partitions from `MS<n>:` to
+`NVME<n>:`. See the [component notes](components/emu68-nvme-driver/RELEASE-NOTES.md#breaking-changes)
+for what needs updating.
 
 ---
 
@@ -17,7 +26,24 @@ Installer script.
 | `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
 | `xhci.device` | 5.2 | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
 | `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
-| `nvme.device` | 1.1 | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+| `nvme.device` | **1.2** | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+
+---
+
+## What changed
+
+### `nvme.device` 1.2 — automount rework and reliability fixes
+
+The driver drops its vendored A4091 mounter for the shared `rondoval/mounter`
+fork, mounting FAT and NTFS partitions on MBR, GPT and superfloppy disks from a
+per-filesystem recipe instead of hardcoded policy. `HD_SCSICMD` responses (INQUIRY,
+MODE SENSE, REQUEST SENSE, READ CAPACITY, VPD, READ/WRITE) no longer overrun the
+caller's buffer, legacy MBR/GPT partition extents are now exact instead of
+CHS-rounded, and partition-table parsing past 4 GB and of malformed structures is
+hardened. DMA cache maintenance moves onto `emu68-common` 1.7.0's `cache_ops.h`,
+batched and emitted inline. See the
+[component notes](components/emu68-nvme-driver/RELEASE-NOTES.md) for full detail,
+including the breaking automount rename above.
 
 ---
 
@@ -26,8 +52,10 @@ Installer script.
 ### `emu68-common` 1.7.0
 
 The shared support library gains the `barrier.h` and `cache_ops.h` headers and a
-standard `strncmp`, and goes back to targeting NDK 3.2 only. No driver in this
-release includes those headers yet, so the drivers are unchanged from 1.1.0.
+standard `strncmp`, and goes back to targeting NDK 3.2 only. `nvme.device` 1.2 is
+the first driver to consume `cache_ops.h`, for its batched, inlined DMA cache
+maintenance (see above); `xhci.device` and `genet.device` are otherwise
+unchanged from 1.1.0.
 
 ### Cache-op routing selectable at configure time
 
