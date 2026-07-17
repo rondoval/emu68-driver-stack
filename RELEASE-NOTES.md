@@ -1,10 +1,11 @@
-# Release notes — Emu68 driver stack 1.2.1
+# Release notes — Emu68 driver stack 1.2.2
 
 Changes since 1.1.0. `nvme.device` advances to 1.2 (automount rework, SCSI and
-partition reliability fixes, batched DMA cache maintenance) and the shared
-`emu68-common` support library advances to 1.7.0; every other component keeps
-its 1.1.0 version. The stack ships as a single `emu68-drivers-1.2.1.lha` archive
-with the Commodore Installer script.
+partition reliability fixes, batched DMA cache maintenance), `bcmpcie.library`
+advances to 2.1 (no longer crashes when opened on a system without
+PiStorm/Emu68), and the shared `emu68-common` support library advances to
+1.7.0; every other component keeps its 1.1.0 version. The stack ships as a
+single `emu68-drivers-1.2.2.lha` archive with the Commodore Installer script.
 
 ---
 
@@ -22,7 +23,7 @@ for what needs updating.
 |---|---|---|
 | `emu68-common` (support library) | **1.7.0** | [RELEASE-NOTES.md](components/emu68-common/RELEASE-NOTES.md) |
 | `gic400.library` | 1.5 | [RELEASE-NOTES.md](components/emu68-gic400-library/RELEASE-NOTES.md) |
-| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.1** | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
 | `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
 | `xhci.device` | 5.2 | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
 | `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
@@ -44,6 +45,13 @@ hardened. DMA cache maintenance moves onto `emu68-common` 1.7.0's `cache_ops.h`,
 batched and emitted inline. See the
 [component notes](components/emu68-nvme-driver/RELEASE-NOTES.md) for full detail,
 including the breaking automount rename above.
+
+### `bcmpcie.library` 2.1 — crash fix for non-Emu68 systems
+
+Opening the library on an Amiga without PiStorm/Emu68 used to crash the machine.
+It now fails cleanly instead: `OpenLibrary` returns `NULL`, so software that
+needs PCIe can handle its absence gracefully. See the
+[component notes](components/emu68-pcie-library/RELEASE-NOTES.md) for detail.
 
 ---
 
