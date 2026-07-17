@@ -71,6 +71,7 @@ TREES=(
     "LIBS|LIBS:"
     "DEVS|DEVS:"
     "C|C:"
+    "ENVARC|ENVARC:"
 )
 
 # --- helpers -----------------------------------------------------------------
@@ -180,7 +181,7 @@ if (( DO_UPLOAD )); then
         fi
     fi
 
-    echo ">> deploying install/{LIBS,DEVS,C} to LIBS: / DEVS: / C: ..."
+    echo ">> deploying install/{LIBS,DEVS,C,ENVARC} to LIBS: / DEVS: / C: / ENVARC: ..."
     for t in "${TREES[@]}"; do
         deploy_tree "${t%%|*}" "${t#*|}"
     done

@@ -26,7 +26,11 @@ jobs:
         run: ./scripts/docker-build.sh
         env:
           EMU68_INSTALL_DIR: install-${{ matrix.backend }}
-          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=${{ matrix.backend }}"
+          # EMU68_FORCE_LVO_CACHE_OPS: CI builds against a released Emu68 that
+          # doesn't yet carry the private range opcode cache_ops.h's inline fast
+          # path needs, so route through the exec LVO instead. Local builds
+          # against a patched Emu68 leave this off to get the optimization.
+          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=${{ matrix.backend }} -DEMU68_FORCE_LVO_CACHE_OPS=ON"
 
       - name: Upload runtime artifacts
         uses: actions/upload-artifact@v7
