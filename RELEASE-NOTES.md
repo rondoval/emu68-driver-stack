@@ -1,11 +1,11 @@
-# Release notes — Emu68 driver stack 1.2.2
+# Release notes — Emu68 driver stack 1.2.3
 
 Changes since 1.1.0. `nvme.device` advances to 1.2 (automount rework, SCSI and
 partition reliability fixes, batched DMA cache maintenance), `bcmpcie.library`
 advances to 2.1 (no longer crashes when opened on a system without
 PiStorm/Emu68), and the shared `emu68-common` support library advances to
 1.7.0; every other component keeps its 1.1.0 version. The stack ships as a
-single `emu68-drivers-1.2.2.lha` archive with the Commodore Installer script.
+single `emu68-drivers-1.2.3.lha` archive with the Commodore Installer script.
 
 ---
 
