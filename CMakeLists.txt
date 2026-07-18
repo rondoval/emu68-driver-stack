@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 1.2.2 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 1.2.3 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -327,8 +327,6 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_INSTALL_PREFIX}/ENVARC" "${PACKAGE_STAGE}/ENVARC"
     # Public SDK headers for the shipped libraries (nvme, gic400, bcmpcie/openpci),
     # under Developer/include/.  proto/clib/inline/pragmas hold only these libs'
     # headers (devicetree/mailbox protos live under install/Developer/, emu68-common
