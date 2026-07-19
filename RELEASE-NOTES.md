@@ -12,7 +12,7 @@ single `emu68-drivers-1.2.3.lha` archive with the Commodore Installer script.
 ## Breaking changes
 
 `nvme.device` 1.2 renames automounted MBR/GPT partitions from `MS<n>:` to
-`NVME<n>:`. See the [component notes](components/emu68-nvme-driver/RELEASE-NOTES.md#breaking-changes)
+`NVME<n>:`. See the [component notes](https://github.com/rondoval/emu68-nvme-driver/blob/v1.2/RELEASE-NOTES.md#breaking-changes)
 for what needs updating.
 
 ---
@@ -21,13 +21,13 @@ for what needs updating.
 
 | Component | Version | Detailed notes |
 |---|---|---|
-| `emu68-common` (support library) | **1.7.0** | [RELEASE-NOTES.md](components/emu68-common/RELEASE-NOTES.md) |
-| `gic400.library` | 1.5 | [RELEASE-NOTES.md](components/emu68-gic400-library/RELEASE-NOTES.md) |
-| `bcmpcie.library` | **2.1** | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
+| `emu68-common` (support library) | **1.7.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.7.0/RELEASE-NOTES.md) |
+| `gic400.library` | 1.5 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.5/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.1/RELEASE-NOTES.md) |
 | `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
-| `xhci.device` | 5.2 | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
-| `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
-| `nvme.device` | **1.2** | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+| `xhci.device` | 5.2 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.2/RELEASE-NOTES.md) |
+| `genet.device` | 3.11 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.11/RELEASE-NOTES.md) |
+| `nvme.device` | **1.2** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.2/RELEASE-NOTES.md) |
 
 ---
 
@@ -43,7 +43,7 @@ caller's buffer, legacy MBR/GPT partition extents are now exact instead of
 CHS-rounded, and partition-table parsing past 4 GB and of malformed structures is
 hardened. DMA cache maintenance moves onto `emu68-common` 1.7.0's `cache_ops.h`,
 batched and emitted inline. See the
-[component notes](components/emu68-nvme-driver/RELEASE-NOTES.md) for full detail,
+[component notes](https://github.com/rondoval/emu68-nvme-driver/blob/v1.2/RELEASE-NOTES.md) for full detail,
 including the breaking automount rename above.
 
 ### `bcmpcie.library` 2.1 — crash fix for non-Emu68 systems
@@ -51,7 +51,7 @@ including the breaking automount rename above.
 Opening the library on an Amiga without PiStorm/Emu68 used to crash the machine.
 It now fails cleanly instead: `OpenLibrary` returns `NULL`, so software that
 needs PCIe can handle its absence gracefully. See the
-[component notes](components/emu68-pcie-library/RELEASE-NOTES.md) for detail.
+[component notes](https://github.com/rondoval/emu68-pcie-library/blob/v2.1/RELEASE-NOTES.md) for detail.
 
 ---
 
@@ -91,13 +91,13 @@ Commodore Installer script.
 
 | Component | Version | Detailed notes |
 |---|---|---|
-| `emu68-common` (support library) | 1.6.0 | [RELEASE-NOTES.md](components/emu68-common/RELEASE-NOTES.md) |
-| `gic400.library` | 1.5 | [RELEASE-NOTES.md](components/emu68-gic400-library/RELEASE-NOTES.md) |
-| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
+| `emu68-common` (support library) | 1.6.0 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.6.0/RELEASE-NOTES.md) |
+| `gic400.library` | 1.5 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.5/RELEASE-NOTES.md) |
+| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.0/RELEASE-NOTES.md) |
 | `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
-| `xhci.device` | **5.2** | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
-| `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
-| `nvme.device` | 1.1 | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+| `xhci.device` | **5.2** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.2/RELEASE-NOTES.md) |
+| `genet.device` | 3.11 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.11/RELEASE-NOTES.md) |
+| `nvme.device` | 1.1 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.1/RELEASE-NOTES.md) |
 
 ---
 
@@ -111,7 +111,7 @@ stack now clamps `bcdUSB` to `0x0210` for devices reporting USB 3.0 or later, so
 the advertised USB revision matches that high-speed presentation. This keeps a
 USB 3.0-aware stack — one that reads `bcdUSB` — from seeing a SuperSpeed revision
 that contradicts the device it is handed. See the
-[component notes](components/emu68-xhci-driver/RELEASE-NOTES.md) for details.
+[component notes](https://github.com/rondoval/emu68-xhci-driver/blob/v5.2/RELEASE-NOTES.md) for details.
 
 
 # Release notes — Emu68 driver stack 1.0.6
@@ -148,13 +148,13 @@ release notes (linked below).
 
 | Component | Version | Detailed notes |
 |---|---|---|
-| `emu68-common` (support library) | 1.6.0 | [RELEASE-NOTES.md](components/emu68-common/RELEASE-NOTES.md) |
-| `gic400.library` | 1.5 | [RELEASE-NOTES.md](components/emu68-gic400-library/RELEASE-NOTES.md) |
-| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](components/emu68-pcie-library/RELEASE-NOTES.md) |
+| `emu68-common` (support library) | 1.6.0 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.6.0/RELEASE-NOTES.md) |
+| `gic400.library` | 1.5 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.5/RELEASE-NOTES.md) |
+| `bcmpcie.library` | 2.0 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.0/RELEASE-NOTES.md) |
 | `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
-| `xhci.device` | 5.1 | [RELEASE-NOTES.md](components/emu68-xhci-driver/RELEASE-NOTES.md) |
-| `genet.device` | 3.11 | [RELEASE-NOTES.md](components/emu68-genet-driver/RELEASE-NOTES.md) |
-| `nvme.device` | 1.1 | [RELEASE-NOTES.md](components/emu68-nvme-driver/RELEASE-NOTES.md) |
+| `xhci.device` | 5.1 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.1/RELEASE-NOTES.md) |
+| `genet.device` | 3.11 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.11/RELEASE-NOTES.md) |
+| `nvme.device` | 1.1 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.1/RELEASE-NOTES.md) |
 
 ---
 
