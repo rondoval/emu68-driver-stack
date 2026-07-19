@@ -23,14 +23,16 @@ jobs:
         env:
           EMU68_BUILD_DIR: build-off
           EMU68_INSTALL_DIR: install-off
-          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=off"
+          # See build.yml: released Emu68 doesn't carry the private opcode
+          # that cache_ops.h's inline fast path needs; force the LVO route.
+          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=off -DEMU68_FORCE_LVO_CACHE_OPS=ON"
 
       - name: Build and package - serial (debug) backend
         run: ./scripts/docker-build.sh --target package
         env:
           EMU68_BUILD_DIR: build-serial
           EMU68_INSTALL_DIR: install-serial
-          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=serial"
+          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=serial -DEMU68_FORCE_LVO_CACHE_OPS=ON"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
