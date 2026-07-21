@@ -22,3 +22,6 @@
 [submodule "components/emu68-nvme-driver"]
 	path = components/emu68-nvme-driver
 	url = https://github.com/rondoval/emu68-nvme-driver
+[submodule "components/lwip-amiga"]
+	path = components/lwip-amiga
+	url = https://github.com/rondoval/lwip-amiga.git
