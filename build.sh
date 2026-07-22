@@ -30,8 +30,21 @@
 #     -h, --help  this help
 #
 # Env overrides:
-#     BACKEND=<pistorm|serial|off>  debug sink (default pistorm; use off for a release)
-#     DEBUG_HIGH=<components|ALL>    verbose per-component logging (CMake list; default off)
+#     BACKEND=<pistorm|serial|off>  debug sink (default pistorm; use off for a release,
+#                                   which is silent regardless of the tiers below)
+#     TIER=<off|profile|debug|trace> what the stack emits through that sink; a
+#                                   cumulative ladder, default debug:
+#                                     off      nothing
+#                                     profile  timing probes + perf_report only
+#                                     debug    asserts and ordinary logging
+#                                     trace    verbose logging (was DEBUG_HIGH)
+#     PROFILE=<components|ALL>      pin these components to the profile tier
+#     DEBUG=<components|ALL>        pin these components to the debug tier
+#     TRACE=<components|ALL>        pin these components to the trace tier
+#                                   (CMake lists; a component may appear in only one)
+#                                     TIER=off PROFILE=lwip-amiga  -> silent stack,
+#                                     nsprof numbers only; feed the capture to
+#                                     components/emu68-common/scripts/perf-report.py
 #     BUILD_DIR=<rel path>          build dir under the repo (default build)
 #     INSTALL_DIR=<rel path>        install prefix under the repo, and the upload source
 #                                   (default install)
@@ -46,7 +59,10 @@ BUILD_DIR="${BUILD_DIR:-build}"        # relative to the repo (scripts/docker-bu
 INSTALL_DIR="${INSTALL_DIR:-install}"  # relative to the repo
 AE="${AE:-/mnt/c/Program Files/Cloanto/Amiga Explorer/Windows/AE.exe}"
 DEBUG_BACKEND="${BACKEND:-pistorm}"
-DEBUG_HIGH="${DEBUG_HIGH:-}"
+DEBUG_TIER="${TIER:-debug}"
+TIER_PROFILE="${PROFILE:-}"
+TIER_DEBUG="${DEBUG:-}"
+TIER_TRACE="${TRACE:-}"
 ABS_INSTALL="$ROOT/$INSTALL_DIR"
 
 DO_BUILD=0 DO_PACKAGE=0 DO_UPLOAD=0 DRY=0 EXPLICIT=0
@@ -136,9 +152,14 @@ deploy_tree() {                            # deploy_tree <src-under-install> <am
 
 # --- build / package (delegated to the CI-coupled container wrapper) ----------
 if (( DO_BUILD )); then
-    # Translate the backend knobs into configure args, appending any the caller set.
-    configure_args="-DEMU68_DEBUG_BACKEND=$DEBUG_BACKEND"
-    [[ -n "$DEBUG_HIGH" ]] && configure_args+=" -DEMU68_DEBUG_HIGH=$DEBUG_HIGH"
+    # Translate the sink + tier knobs into configure args, appending any the caller
+    # set.  Every knob is passed on every configure, empty or not: the build dir is
+    # reused across runs, so omitting one would silently inherit the previous run's
+    # cached value and quietly build the wrong tier.
+    configure_args="-DEMU68_DEBUG_BACKEND=$DEBUG_BACKEND -DEMU68_TIER=$DEBUG_TIER"
+    configure_args+=" -DEMU68_PROFILE=$TIER_PROFILE"
+    configure_args+=" -DEMU68_DEBUG=$TIER_DEBUG"
+    configure_args+=" -DEMU68_TRACE=$TIER_TRACE"
     [[ -n "${EMU68_CONFIGURE_ARGS:-}" ]] && configure_args+=" $EMU68_CONFIGURE_ARGS"
     export EMU68_CONFIGURE_ARGS="$configure_args"
     export EMU68_BUILD_DIR="$BUILD_DIR"
@@ -148,7 +169,7 @@ if (( DO_BUILD )); then
     [[ -n "${BUILD_IMAGE:-}" ]] && export EMU68_BUILD_IMAGE="$BUILD_IMAGE"
 
     what="building"; (( DO_PACKAGE )) && what="building + packaging"
-    echo ">> $what via scripts/docker-build.sh (debug backend=$DEBUG_BACKEND${DEBUG_HIGH:+, high=$DEBUG_HIGH}) ..."
+    echo ">> $what via scripts/docker-build.sh (backend=$DEBUG_BACKEND tier=$DEBUG_TIER${TIER_PROFILE:+, profile=$TIER_PROFILE}${TIER_DEBUG:+, debug=$TIER_DEBUG}${TIER_TRACE:+, trace=$TIER_TRACE}) ..."
     if (( DO_PACKAGE )); then
         # The `package` target DEPENDS on the full `stack`, so this builds then archives.
         "$ROOT/scripts/docker-build.sh" --target package

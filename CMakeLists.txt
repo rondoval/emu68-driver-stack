@@ -12,24 +12,31 @@ endif()
 set(EMU68_DRIVER_STACK_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake" CACHE FILEPATH "Toolchain file used for all component builds")
 set(EMU68_TOOLCHAIN_BIN_DIR "/opt/m68k-amigaos/bin" CACHE PATH "Directory added to PATH for component builds")
 
-# Debug-output backend for the whole stack (see emu68-common/include/debug.h):
+# Debug-output backend (sink) for the whole stack (see emu68-common/include/debug.h):
 #   pistorm (default) - RawDoFmt -> magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
 #   serial            - debug.lib KPrintF -> console (serial @ 9600). Not ROM-able.
-#   off               - debug fully compiled out.
+#   off               - no sink; the whole stack is silent whatever the tiers say.
 # Propagated to every component below so a single backend is used consistently.
 set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
 set_property(CACHE EMU68_DEBUG_BACKEND PROPERTY STRINGS pistorm serial off)
 
-# Verbose ("high") debug logging (debug.h KprintfH / DEBUG_HIGH).  Independent of
-# the backend, but requires DEBUG (i.e. backend != off) to actually emit anything.
-# Value: a list of the stack component target names below to build with DEBUG_HIGH,
-# or ALL for every debug-emitting component.  Empty (default) = off everywhere.
-#   e.g. -DEMU68_DEBUG_HIGH=emu68-pcie-library
-# Propagated per-component as a boolean by add_stack_project() below.
-set(EMU68_DEBUG_HIGH "" CACHE STRING "Components to build with verbose DEBUG_HIGH logging (list, or ALL)")
+# Debug tier - what a component emits through that sink (see the ladder in
+# emu68-common/cmake/Emu68CommonDebug.cmake):
+#   off | profile (timing only) | debug (asserts + logging) | trace (verbose)
+# EMU68_TIER is the stack-wide baseline; the three lists below pin individual
+# components to a different rung, so any baseline/exception mix is expressible:
+#   -DEMU68_TIER=off -DEMU68_PROFILE=lwip-amiga   silent stack, nsprof numbers only
+#   -DEMU68_TIER=profile -DEMU68_TRACE=emu68-nvme-driver
+# Each list takes component target names from EMU68_DEBUG_COMPONENTS, or ALL.
+# add_stack_project() resolves baseline + lists into one per-component EMU68_TIER.
+set(EMU68_TIER "debug" CACHE STRING "Stack-wide debug tier baseline: off | profile | debug | trace")
+set_property(CACHE EMU68_TIER PROPERTY STRINGS off profile debug trace)
+set(EMU68_PROFILE "" CACHE STRING "Components pinned to the profile tier (list, or ALL)")
+set(EMU68_DEBUG   "" CACHE STRING "Components pinned to the debug tier (list, or ALL)")
+set(EMU68_TRACE   "" CACHE STRING "Components pinned to the trace tier (list, or ALL)")
 
 # Components that emit debug output (consume emu68-common's debug.h); the only ones
-# for which EMU68_DEBUG_HIGH is meaningful.  Used to reject typos in the list.
+# for which a tier is meaningful.  Used to reject typos in the lists above.
 set(EMU68_DEBUG_COMPONENTS
     emu68-common
     emu68-gic400-library
@@ -53,15 +60,69 @@ set(EMU68_CACHE_OPS_COMPONENTS
     emu68-genet-driver
     emu68-nvme-driver)
 
-if(NOT EMU68_DEBUG_HIGH STREQUAL "ALL")
-    foreach(_dh ${EMU68_DEBUG_HIGH})
-        if(NOT _dh IN_LIST EMU68_DEBUG_COMPONENTS)
+# The tier-override lists, in ascending rung order.  A component may appear in at
+# most one; each entry must name a debug-emitting component (or the list is ALL).
+set(EMU68_TIER_OVERRIDE_LISTS EMU68_PROFILE EMU68_DEBUG EMU68_TRACE)
+
+if(NOT EMU68_TIER MATCHES "^(off|profile|debug|trace)$")
+    message(FATAL_ERROR "EMU68_TIER must be off, profile, debug or trace (got '${EMU68_TIER}')")
+endif()
+
+set(_seen_components "")
+set(_all_list "")
+foreach(_list IN LISTS EMU68_TIER_OVERRIDE_LISTS)
+    if(${_list} STREQUAL "ALL")
+        if(NOT _all_list STREQUAL "")
             message(FATAL_ERROR
-                "EMU68_DEBUG_HIGH entry '${_dh}' is not a debug-emitting component.\n"
+                "${_all_list} and ${_list} are both ALL; a component has exactly one tier.")
+        endif()
+        set(_all_list "${_list}")
+        continue()
+    endif()
+    foreach(_c IN LISTS ${_list})
+        if(NOT _c IN_LIST EMU68_DEBUG_COMPONENTS)
+            message(FATAL_ERROR
+                "${_list} entry '${_c}' is not a debug-emitting component.\n"
                 "Valid values: ALL or any of: ${EMU68_DEBUG_COMPONENTS}")
         endif()
+        if(_c IN_LIST _seen_components)
+            message(FATAL_ERROR
+                "Component '${_c}' is named in more than one of "
+                "${EMU68_TIER_OVERRIDE_LISTS}; a component has exactly one tier.")
+        endif()
+        list(APPEND _seen_components "${_c}")
     endforeach()
+endforeach()
+if(NOT _all_list STREQUAL "" AND NOT _seen_components STREQUAL "")
+    message(FATAL_ERROR
+        "${_all_list}=ALL already covers every component, but ${_seen_components} "
+        "is also pinned elsewhere; a component has exactly one tier.")
 endif()
+
+# Tier knobs are meaningless without a sink - say so rather than silently ignoring
+# them, which is how a "profiling" build could quietly produce nothing.
+if(EMU68_DEBUG_BACKEND STREQUAL "off")
+    if(NOT EMU68_TIER STREQUAL "debug" OR NOT _seen_components STREQUAL "" OR NOT _all_list STREQUAL "")
+        message(WARNING
+            "EMU68_DEBUG_BACKEND=off: the whole stack is silent, so EMU68_TIER and the "
+            "${EMU68_TIER_OVERRIDE_LISTS} lists have no effect.")
+    endif()
+endif()
+
+# emu68_resolve_tier(<out> <component>)
+# The component's own rung: its override list if it is named in one, else the
+# stack-wide baseline.
+function(emu68_resolve_tier out component)
+    foreach(_list IN LISTS EMU68_TIER_OVERRIDE_LISTS)
+        if(${_list} STREQUAL "ALL" OR component IN_LIST ${_list})
+            string(REGEX REPLACE "^EMU68_" "" _rung "${_list}")
+            string(TOLOWER "${_rung}" _rung)
+            set(${out} "${_rung}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out} "${EMU68_TIER}" PARENT_SCOPE)
+endfunction()
 
 # Default source directories point to the bundled submodules.
 # Override any of these with -D<VAR>=/path/to/your/checkout for local development.
@@ -107,19 +168,16 @@ function(add_stack_project target source_dir)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     # Debug args only apply to debug-emitting components (those that consume
-    # emu68-common's debug.h): the stack-wide backend, plus this component's
-    # EMU68_DEBUG_HIGH boolean derived from the stack-wide component list.
+    # emu68-common's debug.h): the stack-wide sink, plus this component's own
+    # rung resolved from the baseline and the override lists.
     # devicetree.resource/mailbox.resource get neither — passing them would trip
     # CMake's "unused variable" warning.
     set(_debug_args "")
     if(target IN_LIST EMU68_DEBUG_COMPONENTS)
-        set(_debug_high OFF)
-        if(EMU68_DEBUG_HIGH STREQUAL "ALL" OR target IN_LIST EMU68_DEBUG_HIGH)
-            set(_debug_high ON)
-        endif()
+        emu68_resolve_tier(_tier ${target})
         set(_debug_args
             -DEMU68_DEBUG_BACKEND:STRING=${EMU68_DEBUG_BACKEND}
-            -DEMU68_DEBUG_HIGH:BOOL=${_debug_high})
+            -DEMU68_TIER:STRING=${_tier})
     endif()
 
     # Cache-ops LVO-fallback flag only applies to components whose sources
@@ -223,15 +281,27 @@ else()
     set(DEBUG_BACKEND_DESCRIPTION
         "Debug build (${EMU68_DEBUG_BACKEND} backend) - driver debug output is routed\n  through the Emu68/PiStorm debug console.")
 endif()
+# A non-default tier changes what that sink carries, so name it too.
+if(NOT EMU68_DEBUG_BACKEND STREQUAL "off" AND NOT EMU68_TIER STREQUAL "debug")
+    string(APPEND DEBUG_BACKEND_DESCRIPTION "\n  Debug tier: ${EMU68_TIER}.")
+endif()
 
 # Suffix the package name by backend so a release can ship multiple variants
-# side by side.  'off' is the production download and carries no suffix.
+# side by side.  'off' is the production download and carries no suffix (and no
+# tier can change what it contains).  Anything that is not the plain debug build
+# says so, so a profiling or trace archive is never mistaken for it: the baseline
+# tier when it is not the default, and "-mixed" when per-component overrides are
+# in play (which components those are is a developer-local choice, not a name).
 if(EMU68_DEBUG_BACKEND STREQUAL "off")
     set(PACKAGE_SUFFIX "")
-elseif(EMU68_DEBUG_BACKEND STREQUAL "serial")
-    set(PACKAGE_SUFFIX "-serial")
 else()
     set(PACKAGE_SUFFIX "-${EMU68_DEBUG_BACKEND}")
+    if(NOT EMU68_TIER STREQUAL "debug")
+        string(APPEND PACKAGE_SUFFIX "-${EMU68_TIER}")
+    endif()
+    if(NOT _seen_components STREQUAL "" OR NOT _all_list STREQUAL "")
+        string(APPEND PACKAGE_SUFFIX "-mixed")
+    endif()
 endif()
 
 set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}${PACKAGE_SUFFIX}")
