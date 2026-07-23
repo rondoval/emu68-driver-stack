@@ -73,7 +73,10 @@ jobs:
           EMU68_CONFIGURE_ARGS: "-D${{ inputs.source_dir_var }}=/work/_pr_component"
 
   tag:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # A component may release from more than one branch (genet ships 3.x from main
+    # and 4.x from netdev_release); each branch carries its own version, so v<ver>
+    # never collides. Components with only a main branch never match the second ref.
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/netdev_release') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

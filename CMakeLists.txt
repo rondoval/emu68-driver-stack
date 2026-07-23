@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 1.2.3 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.0.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -42,8 +42,10 @@ set(EMU68_DEBUG_COMPONENTS
     emu68-gic400-library
     emu68-pcie-library
     emu68-xhci-driver
-    emu68-genet-driver
-    emu68-nvme-driver)
+    emu68-genet-driver-netdev
+    emu68-genet-driver-sana2
+    emu68-nvme-driver
+    lwip-amiga)
 
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
@@ -57,7 +59,7 @@ option(EMU68_FORCE_LVO_CACHE_OPS
 # Components whose sources include cache_ops.h and so need the flag above forwarded.
 set(EMU68_CACHE_OPS_COMPONENTS
     emu68-xhci-driver
-    emu68-genet-driver
+    emu68-genet-driver-netdev
     emu68-nvme-driver)
 
 # The tier-override lists, in ascending rung order.  A component may appear in at
@@ -132,8 +134,10 @@ set(EMU68_COMMON_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68
 set(EMU68_GIC400_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-gic400-library" CACHE PATH "Path to emu68-gic400-library sources")
 set(EMU68_PCIE_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-pcie-library"  CACHE PATH "Path to emu68-pcie-library sources")
 set(EMU68_XHCI_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver"   CACHE PATH "Path to emu68-xhci-driver sources")
-set(EMU68_GENET_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver"  CACHE PATH "Path to emu68-genet-driver sources")
+set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-netdev"  CACHE PATH "Path to emu68-genet-driver-netdev (4.x, netdev ABI) sources")
+set(EMU68_GENET_SANA2_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-sana2"   CACHE PATH "Path to emu68-genet-driver-sana2 (3.x, SANA-II) sources")
 set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
+set(LWIP_AMIGA_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/lwip-amiga"          CACHE PATH "Path to lwip-amiga sources")
 
 # Validate required paths
 foreach(required_path
@@ -144,8 +148,10 @@ foreach(required_path
     EMU68_GIC400_SOURCE_DIR
     EMU68_PCIE_SOURCE_DIR
     EMU68_XHCI_SOURCE_DIR
-    EMU68_GENET_SOURCE_DIR
-    EMU68_NVME_SOURCE_DIR)
+    EMU68_GENET_NETDEV_SOURCE_DIR
+    EMU68_GENET_SANA2_SOURCE_DIR
+    EMU68_NVME_SOURCE_DIR
+    LWIP_AMIGA_SOURCE_DIR)
     if(NOT EXISTS "${${required_path}}")
         message(FATAL_ERROR
             "Required path does not exist: ${required_path}='${${required_path}}'\n"
@@ -163,9 +169,20 @@ endif()
 # Function to add stack projects
 function(add_stack_project target source_dir)
     set(options)
-    set(oneValueArgs)
+    set(oneValueArgs INSTALL_PREFIX)
     set(multiValueArgs DEPENDS)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    # A component installs into the shared install prefix unless INSTALL_PREFIX
+    # overrides it with a subtree (e.g. .../Storage).  CMAKE_PREFIX_PATH stays
+    # the shared prefix, so the component still *finds* the exported
+    # Emu68Common / GIC400 packages there.  This lets the SANA-II genet variant
+    # land its DEVS/Networks/genet.device under Storage without colliding with
+    # the netdev variant's genet.device of the same filename.
+    set(_install_prefix "${CMAKE_INSTALL_PREFIX}")
+    if(STACK_INSTALL_PREFIX)
+        set(_install_prefix "${STACK_INSTALL_PREFIX}")
+    endif()
 
     # Debug args only apply to debug-emitting components (those that consume
     # emu68-common's debug.h): the stack-wide sink, plus this component's own
@@ -190,10 +207,10 @@ function(add_stack_project target source_dir)
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
-        INSTALL_DIR "${CMAKE_INSTALL_PREFIX}"
+        INSTALL_DIR "${_install_prefix}"
         CMAKE_ARGS
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${EMU68_DRIVER_STACK_TOOLCHAIN_FILE}
-            -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
+            -DCMAKE_INSTALL_PREFIX:PATH=${_install_prefix}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
             ${_debug_args}
             ${_cache_ops_args}
@@ -220,7 +237,13 @@ add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.r
 add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource emu68-common)
 add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library)
-add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
+add_stack_project(lwip-amiga "${LWIP_AMIGA_SOURCE_DIR}" DEPENDS emu68-common)
+add_stack_project(emu68-genet-driver-netdev "${EMU68_GENET_NETDEV_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library lwip-amiga)
+# SANA-II (3.x) genet variant: installs to a Storage/ subtree so its genet.device
+# does not collide with the netdev variant's, and does not depend on lwip-amiga.
+add_stack_project(emu68-genet-driver-sana2 "${EMU68_GENET_SANA2_SOURCE_DIR}"
+    INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/Storage"
+    DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
 
 get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
@@ -253,8 +276,19 @@ emu68_read_version(GIC400_VERSION  "${EMU68_GIC400_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(BCMPCIE_VERSION "${EMU68_PCIE_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(OPENPCI_VERSION "${EMU68_PCIE_SOURCE_DIR}/openpci.library/CMakeLists.txt")
 emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_SOURCE_DIR}/CMakeLists.txt")
-emu68_read_version(GENET_VERSION   "${EMU68_GENET_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(GENET_VERSION   "${EMU68_GENET_NETDEV_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(GENET_SANA2_VERSION "${EMU68_GENET_SANA2_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(LWIP_VERSION    "${LWIP_AMIGA_SOURCE_DIR}/CMakeLists.txt")
+
+# lwip-amiga's release version is LWIP_VERSION; the shipped bsdsocket.library keeps ABI
+# major 4 (the AmiTCP/Roadshow contract) with its revision derived from that release
+# version (mirrors src/CMakeLists.txt). This is what 'version bsdsocket.library' reports.
+string(REPLACE "." ";" _lwip_ver_parts "${LWIP_VERSION}")
+list(GET _lwip_ver_parts 0 _lwip_ver_major)
+list(GET _lwip_ver_parts 1 _lwip_ver_minor)
+math(EXPR _bsdsocket_rev "${_lwip_ver_major} * 100 + ${_lwip_ver_minor}")
+set(BSDSOCKET_VERSION "4.${_bsdsocket_rev}")
 
 # Components whose README + LICENSE + release notes are bundled into the archive
 # under Documentation/<name>/, and listed in the generated root 'Licenses' file.
@@ -265,8 +299,10 @@ set(EMU68_DOC_COMPONENTS
     "emu68-gic400-library|${EMU68_GIC400_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|GIC400_VERSION"
     "emu68-pcie-library|${EMU68_PCIE_SOURCE_DIR}|GPL-2.0 (bcmpcie/openpci/lspci)|BCMPCIE_VERSION"
     "emu68-xhci-driver|${EMU68_XHCI_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
-    "emu68-genet-driver|${EMU68_GENET_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
-    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION")
+    "emu68-genet-driver-netdev|${EMU68_GENET_NETDEV_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
+    "emu68-genet-driver-sana2|${EMU68_GENET_SANA2_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_SANA2_VERSION"
+    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION"
+    "lwip-amiga|${LWIP_AMIGA_SOURCE_DIR}|BSD-3-Clause|LWIP_VERSION")
 
 # Describe the debug backend for the generated ReadMe so each archive is
 # self-describing about which build variant it is.
@@ -337,12 +373,14 @@ configure_file(
 file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
 "emu68 Driver Stack ${PACKAGE_VERSION} - component versions:
 
-  gic400.library    ${GIC400_VERSION}
-  bcmpcie.library   ${BCMPCIE_VERSION}
-  xhci.device       ${XHCI_VERSION}
-  genet.device      ${GENET_VERSION}
-  nvme.device       ${NVME_VERSION}
-  openpci.library   ${OPENPCI_VERSION}
+  gic400.library         ${GIC400_VERSION}
+  bcmpcie.library        ${BCMPCIE_VERSION}
+  xhci.device            ${XHCI_VERSION}
+  genet.device (netdev)  ${GENET_VERSION}
+  genet.device (SANA-II) ${GENET_SANA2_VERSION}
+  nvme.device            ${NVME_VERSION}
+  openpci.library        ${OPENPCI_VERSION}
+  bsdsocket.library      ${BSDSOCKET_VERSION}
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component
@@ -359,7 +397,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device       -> emu68-xhci-driver\n  genet.device      -> emu68-genet-driver\n  genet-stats       -> emu68-genet-driver\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device       -> emu68-xhci-driver\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -397,13 +435,21 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
+    # SANA-II genet variant (+ genet-stats) installs under Storage/ — present in the
+    # archive but not installed; the installer copies genet.device to DEVS:Networks/
+    # only if the user picks the SANA-II line.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/Storage" "${PACKAGE_STAGE}/Storage"
     # Public SDK headers for the shipped libraries (nvme, gic400, bcmpcie/openpci),
     # under Developer/include/.  proto/clib/inline/pragmas hold only these libs'
     # headers (devicetree/mailbox protos live under install/Developer/, emu68-common
     # headers under install/include/ root) -> copy those four wholesale.  devices/
     # and libraries/ are enumerated to ship only the curated set: devices/nvme.h
-    # (not nvme_defs.h) and the bcmpcie/gic library headers minus pci_constants.h /
-    # pci_ids.h -- which keeps emu68-common out entirely (nothing pulls in types.h).
+    # (not nvme_defs.h), devices/netdev.h (the NIC driver ABI -- a third party can
+    # write a netdev driver or stack against it; BSD-3-Clause, and it includes
+    # nothing but exec/types.h) and the bcmpcie/gic library headers minus
+    # pci_constants.h / pci_ids.h -- which keeps emu68-common out entirely
+    # (nothing pulls in types.h).
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/include/proto"   "${PACKAGE_STAGE}/Developer/include/proto"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -415,6 +461,7 @@ add_custom_target(package
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/devices"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_INSTALL_PREFIX}/include/devices/nvme.h"
+        "${CMAKE_INSTALL_PREFIX}/include/devices/netdev.h"
         "${PACKAGE_STAGE}/Developer/include/devices/"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/libraries"
     COMMAND ${CMAKE_COMMAND} -E copy

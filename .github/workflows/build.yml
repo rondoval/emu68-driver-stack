@@ -40,4 +40,5 @@ jobs:
             install-${{ matrix.backend }}/LIBS
             install-${{ matrix.backend }}/DEVS
             install-${{ matrix.backend }}/C
+            install-${{ matrix.backend }}/Storage
           if-no-files-found: error
