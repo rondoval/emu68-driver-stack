@@ -41,7 +41,8 @@ set(EMU68_DEBUG_COMPONENTS
     emu68-common
     emu68-gic400-library
     emu68-pcie-library
-    emu68-xhci-driver
+    emu68-xhci-driver-context
+    emu68-xhci-driver-legacy
     emu68-genet-driver-netdev
     emu68-genet-driver-sana2
     emu68-nvme-driver
@@ -57,8 +58,9 @@ option(EMU68_FORCE_LVO_CACHE_OPS
     OFF)
 
 # Components whose sources include cache_ops.h and so need the flag above forwarded.
+# The legacy (5.x) xhci line predates cache_ops.h and is deliberately absent.
 set(EMU68_CACHE_OPS_COMPONENTS
-    emu68-xhci-driver
+    emu68-xhci-driver-context
     emu68-genet-driver-netdev
     emu68-nvme-driver)
 
@@ -133,7 +135,8 @@ set(MAILBOX_RESOURCE_SOURCE_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/components/mailb
 set(EMU68_COMMON_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-common"        CACHE PATH "Path to emu68-common sources")
 set(EMU68_GIC400_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-gic400-library" CACHE PATH "Path to emu68-gic400-library sources")
 set(EMU68_PCIE_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-pcie-library"  CACHE PATH "Path to emu68-pcie-library sources")
-set(EMU68_XHCI_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver"   CACHE PATH "Path to emu68-xhci-driver sources")
+set(EMU68_XHCI_CONTEXT_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver-context" CACHE PATH "Path to emu68-xhci-driver-context (6.x, context HCD ABI) sources")
+set(EMU68_XHCI_LEGACY_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver-legacy"  CACHE PATH "Path to emu68-xhci-driver-legacy (5.x, classic Poseidon HCD ABI) sources")
 set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-netdev"  CACHE PATH "Path to emu68-genet-driver-netdev (4.x, netdev ABI) sources")
 set(EMU68_GENET_SANA2_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-sana2"   CACHE PATH "Path to emu68-genet-driver-sana2 (3.x, SANA-II) sources")
 set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
@@ -147,7 +150,8 @@ foreach(required_path
     EMU68_COMMON_SOURCE_DIR
     EMU68_GIC400_SOURCE_DIR
     EMU68_PCIE_SOURCE_DIR
-    EMU68_XHCI_SOURCE_DIR
+    EMU68_XHCI_CONTEXT_SOURCE_DIR
+    EMU68_XHCI_LEGACY_SOURCE_DIR
     EMU68_GENET_NETDEV_SOURCE_DIR
     EMU68_GENET_SANA2_SOURCE_DIR
     EMU68_NVME_SOURCE_DIR
@@ -236,7 +240,12 @@ add_stack_project(mailbox.resource "${MAILBOX_RESOURCE_SOURCE_DIR}" DEPENDS devi
 add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource)
 add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource emu68-common)
 add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
-add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library)
+add_stack_project(emu68-xhci-driver-context "${EMU68_XHCI_CONTEXT_SOURCE_DIR}" DEPENDS emu68-pcie-library)
+# Legacy (5.x) xhci variant for classic Poseidon 4.x: installs to a Storage/ subtree
+# so its xhci.device does not collide with the context variant's.
+add_stack_project(emu68-xhci-driver-legacy "${EMU68_XHCI_LEGACY_SOURCE_DIR}"
+    INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/Storage"
+    DEPENDS emu68-pcie-library)
 add_stack_project(lwip-amiga "${LWIP_AMIGA_SOURCE_DIR}" DEPENDS emu68-common)
 add_stack_project(emu68-genet-driver-netdev "${EMU68_GENET_NETDEV_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library lwip-amiga)
 # SANA-II (3.x) genet variant: installs to a Storage/ subtree so its genet.device
@@ -275,7 +284,8 @@ emu68_read_version(COMMON_VERSION  "${EMU68_COMMON_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GIC400_VERSION  "${EMU68_GIC400_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(BCMPCIE_VERSION "${EMU68_PCIE_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(OPENPCI_VERSION "${EMU68_PCIE_SOURCE_DIR}/openpci.library/CMakeLists.txt")
-emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_CONTEXT_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(XHCI_LEGACY_VERSION "${EMU68_XHCI_LEGACY_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GENET_VERSION   "${EMU68_GENET_NETDEV_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GENET_SANA2_VERSION "${EMU68_GENET_SANA2_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
@@ -298,7 +308,8 @@ set(EMU68_DOC_COMPONENTS
     "emu68-common|${EMU68_COMMON_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|COMMON_VERSION"
     "emu68-gic400-library|${EMU68_GIC400_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|GIC400_VERSION"
     "emu68-pcie-library|${EMU68_PCIE_SOURCE_DIR}|GPL-2.0 (bcmpcie/openpci/lspci)|BCMPCIE_VERSION"
-    "emu68-xhci-driver|${EMU68_XHCI_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
+    "emu68-xhci-driver-context|${EMU68_XHCI_CONTEXT_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
+    "emu68-xhci-driver-legacy|${EMU68_XHCI_LEGACY_SOURCE_DIR}|GPL-2.0|XHCI_LEGACY_VERSION"
     "emu68-genet-driver-netdev|${EMU68_GENET_NETDEV_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
     "emu68-genet-driver-sana2|${EMU68_GENET_SANA2_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_SANA2_VERSION"
     "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION"
@@ -375,7 +386,8 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
 
   gic400.library         ${GIC400_VERSION}
   bcmpcie.library        ${BCMPCIE_VERSION}
-  xhci.device            ${XHCI_VERSION}
+  xhci.device (context)  ${XHCI_VERSION}
+  xhci.device (legacy)   ${XHCI_LEGACY_VERSION}
   genet.device (netdev)  ${GENET_VERSION}
   genet.device (SANA-II) ${GENET_SANA2_VERSION}
   nvme.device            ${NVME_VERSION}
@@ -397,7 +409,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device       -> emu68-xhci-driver\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component

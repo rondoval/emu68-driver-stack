@@ -5,7 +5,7 @@ These instructions are specific to the top-level superbuild repo.
 ## Role
 
 - This repo is the preferred validation point when a change touches installed headers, exported CMake packages, or more than one component.
-- The superbuild assumes sibling repositories for `devicetree.resource`, `mailbox.resource`, `emu68-common`, `emu68-gic400-library`, `emu68-pcie-library`, `emu68-xhci-driver`, and `emu68-genet-driver`.
+- Components are git submodules under `components/`: `devicetree.resource`, `mailbox.resource`, `emu68-common`, `emu68-gic400-library`, `emu68-pcie-library`, `emu68-xhci-driver-context`, `emu68-xhci-driver-legacy`, `emu68-genet-driver-netdev`, `emu68-genet-driver-sana2`, `emu68-nvme-driver`, `lwip-amiga`.
 - Default driver-stack output goes under `install/`, including `install/Developer`, `install/include`, `install/lib`, `install/LIBS`, `install/DEVS`, and `install/C`.
 
 ## Build Flow
@@ -35,10 +35,16 @@ When rebuilding components manually after API or install-layout changes, use thi
 1. `devicetree.resource`
 2. `mailbox.resource`
 3. `emu68-common`
-4. `emu68-gic400-library`
+4. `emu68-gic400-library`, `lwip-amiga`
 5. `emu68-pcie-library`
-6. `emu68-xhci-driver`
-7. `emu68-genet-driver`
+6. `emu68-xhci-driver-context`, `emu68-xhci-driver-legacy`, `emu68-nvme-driver`, `emu68-genet-driver-netdev`, `emu68-genet-driver-sana2` (parallel)
+
+## Related Repositories
+
+- `emu68-xhci-driver-context` is a **matched pair** with the Poseidon USB stack backport
+  (the `poseidon-backport` repo): the context HCD ABI is specified in that repo's
+  `docs/poseidon-context-hcd-abi.md` + `docs/implementation-plan.md`. Cross-repo ABI changes must
+  land in both.
 
 ## Validation
 

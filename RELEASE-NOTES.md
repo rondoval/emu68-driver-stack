@@ -1,3 +1,106 @@
+# Release notes — Emu68 driver stack 2.0.0
+
+The stack gains a native TCP/IP stack, and both `genet.device` and `xhci.device` now ship
+in two mutually-exclusive lines with the installer asking which one you want.
+
+`lwip-amiga` joins the archive, shipping `bsdsocket.library` (with `netdev-stats`,
+`netinfo` and `mdns`) — a modern lwIP-based TCP/IP stack for AmigaOS applications. To
+drive it, `genet.device` advances to **4.x**, a rewrite that speaks the new zero-copy
+**netdev** ABI instead of SANA-II.
+
+`xhci.device` advances to **6.0** on a new line that speaks the context HCD ABI of
+Poseidon for AmigaOS 6.x, presenting real USB 3.0 devices instead of emulating USB 2.0 and
+adding USB 3.0 bulk streams for fast UAS storage.
+
+Networking — pick one:
+
+- **netdev (4.1) + `bsdsocket.library`** — the lwip-amiga stack. This `genet.device` is
+  **not** a SANA-II driver.
+- **SANA-II (3.13)** — the classic driver for Roadshow, AmiTCP and Miami. It rides in the
+  archive under `Storage/` and is copied to `DEVS:Networks/` only if you choose it.
+
+USB — pick one:
+
+- **6.x (context)** — for **Poseidon for AmigaOS 6.x**. Real USB 3.0 with no USB 2.0
+  emulation, plus bulk streams. This is the default line.
+- **5.x (legacy)** — required on **classic Poseidon 4.x**, and usable on Poseidon 6.x
+  too, which keeps the older interface — but there it is the slower option: SuperSpeed
+  devices are presented as USB 2.0 and there are no bulk streams. It rides in the archive
+  under `Storage/` and is copied to `DEVS:USBHardware/` only if you choose it.
+
+Neither USB stack ships here — Poseidon is distributed separately, so the installer cannot
+detect which one you run: pick the line matching the stack you already have. Choosing
+"None" for either device installs no driver of that kind at all.
+
+Every other component advances too: `emu68-common` 1.8.0, `gic400.library` 1.7,
+`bcmpcie.library` 2.3, `nvme.device` 1.4. The stack ships as a single
+`emu68-drivers-2.0.0.lha` archive with the Commodore Installer script.
+
+---
+
+## Breaking changes
+
+**Ethernet.** The default `genet.device` (4.1) speaks the netdev ABI, not SANA-II: a
+SANA-II TCP/IP stack (Roadshow, AmiTCP, Miami) cannot open it, and the lwip-amiga stack
+cannot open a SANA-II driver. Pick the SANA-II `genet.device` 3.13 variant at install time
+if you use a third-party stack. Installing the netdev line also replaces any existing
+`bsdsocket.library`.
+
+**USB.** The default `xhci.device` (6.0) speaks only the context HCD ABI, which **classic
+Poseidon 4.x cannot drive** — it answers the legacy per-transfer commands with
+`IOERR_NOCMD`. Users staying on Poseidon 4.x must pick the 5.x line at install time. The
+reverse is not a problem: Poseidon 6.x drives either line.
+
+---
+
+## Component versions in this release
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `emu68-common` (support library) | **1.8.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.8.0/RELEASE-NOTES.md) |
+| `gic400.library` | **1.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.7/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.3/RELEASE-NOTES.md) |
+| `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
+| `xhci.device` (context, 6.x) | **6.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.0/RELEASE-NOTES.md) |
+| `xhci.device` (legacy, 5.x) | **5.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.3/RELEASE-NOTES.md) |
+| `genet.device` (netdev, 4.x) | **4.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v4.1/RELEASE-NOTES.md) |
+| `genet.device` (SANA-II, 3.x) | **3.13** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.13/RELEASE-NOTES.md) |
+| `nvme.device` | **1.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.4/RELEASE-NOTES.md) |
+| `bsdsocket.library` (lwip-amiga) | **4.102** (lwip-amiga 1.2) | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.2/RELEASE-NOTES.md) |
+
+---
+
+## What changed
+
+### `lwip-amiga` — a native TCP/IP stack (new)
+
+`bsdsocket.library`, a modern lwIP-based TCP/IP stack for AmigaOS, joins the archive along
+with the `netdev-stats`, `netinfo` and `mdns` tools. It drives the network hardware
+through the zero-copy netdev ABI and configures itself over DHCP the first time an
+application opens it; static addressing, the hostname and the driver selection live in
+`ENVARC:netstack.prefs`.
+
+### `genet.device` 4.x — netdev ABI
+
+The Gigabit Ethernet driver was rewritten for the netdev ABI: packets move zero-copy
+between the stack's DMA memory and the hardware rings, with hardware TX/RX checksum
+offload and interrupt coalescing. The SANA-II 3.13 driver remains in the archive for
+third-party stacks. See the component notes for the full 3.x → 4.x story.
+
+### `xhci.device` 6.0 — real USB 3.0 for the new Poseidon
+
+The 6.x line drops the USB 3.0 ↔ USB 2.0 translation the 5.x line needs: SuperSpeed
+devices reach the stack with their own descriptors and a real SuperSpeed root hub, because
+Poseidon for AmigaOS 6.x handles USB 3.0 itself. It also adds USB 3.0 bulk streams, the
+fast UAS path for mass storage, and issues every transfer as a direct call rather than a
+message to the driver's port. The 5.3 legacy line carries no functional change over 5.2 —
+it is rebuilt against the current `emu68-common` debug API.
+
+Other components advance with their own maintenance and reliability fixes — see each
+component's linked release notes above.
+
+---
+
 # Release notes — Emu68 driver stack 1.2.3
 
 Changes since 1.1.0. `nvme.device` advances to 1.2 (automount rework, SCSI and

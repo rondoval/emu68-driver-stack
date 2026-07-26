@@ -74,9 +74,10 @@ jobs:
 
   tag:
     # A component may release from more than one branch (genet ships 3.x from main
-    # and 4.x from netdev_release); each branch carries its own version, so v<ver>
-    # never collides. Components with only a main branch never match the second ref.
-    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/netdev_release') }}
+    # and 4.x from netdev_release; xhci ships 5.x from main and 6.x from
+    # context_release); each branch carries its own version, so v<ver> never
+    # collides. Components with only a main branch never match the extra refs.
+    if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/netdev_release' || github.ref == 'refs/heads/context_release') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

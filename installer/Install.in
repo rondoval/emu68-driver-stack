@@ -12,7 +12,7 @@
 ; report reads sensibly.
 (set @default-dest "SYS:")
 
-; Require Installer v43.3+ (askoptions, copylib-style version checking, IN).
+; Require Installer v43.3+ (askoptions, askchoice, copylib-style version checking, IN).
 ; 2818051 = (43 << 16) | 3.
 (if (< @installer-version 2818051)
     (
@@ -71,17 +71,38 @@
     #cv_do
 )
 
-; P_copytool - install a CLI tool to C: (always overwrites; no version check).
-; Callers invoke this only when the paired driver/library was actually
-; (re)installed (see P_copyver's return value), so the tool stays in lockstep
-; with the binary it talks to instead of being silently downgraded on its own.
-(procedure P_copytool #ct_src #ct_destdir
+; P_copyforce - unconditional force-copy of a file into a destination drawer, with
+; no version check.  Used for the CLI tools (kept in lockstep with the binary they
+; talk to) and for the two files that can legitimately be DOWNGRADED: the chosen
+; genet.device variant (switching netdev 4.x <-> SANA-II 3.x is a same-name version
+; change P_copyver would refuse) and the lwip-amiga bsdsocket.library (which must
+; replace whatever incompatible bsdsocket a third-party stack installed).
+(procedure P_copyforce #ct_src #ct_destdir
     (copyfiles
         (prompt (cat "Installing " (fileonly #ct_src) "..."))
         (help @copyfiles-help)
         (source #ct_src)
         (dest #ct_destdir)
         (optional "force")
+    )
+)
+
+; P_backup - back up an existing file to <name>.orig before it is overwritten,
+; but only once (never clobber an existing .orig).  Used before the netdev line
+; force-replaces bsdsocket.library, so a later switch to a SANA-II stack can
+; restore the user's original TCP/IP library.
+(procedure P_backup #bk_dir #bk_name
+    (set #bk_src (tackon #bk_dir #bk_name))
+    (if (AND (exists #bk_src (noreq))
+             (NOT (exists (tackon #bk_dir (cat #bk_name ".orig")) (noreq))))
+        (copyfiles
+            (prompt (cat "Backing up " #bk_name " to " #bk_name ".orig..."))
+            (help @copyfiles-help)
+            (source #bk_src)
+            (dest #bk_dir)
+            (newname (cat #bk_name ".orig"))
+            (optional "force")
+        )
     )
 )
 
@@ -94,9 +115,13 @@
         "This package installs AmigaOS drivers for RPI4/CM4\n\n"
         "  * gic400.library   - ARM GIC-400 interrupt controller\n"
         "  * bcmpcie.library  - BCM2711 PCIe bus library\n"
-        "  * xhci.device      - USB 2.0/3.0 XHCI\n"
-        "  * genet.device     - Gigabit Ethernet (+ genet-stats)\n"
+        "  * xhci.device      - USB 2.0/3.0 XHCI, in one of two lines:\n"
+        "      - 6.x needs Poseidon for AmigaOS 6.x (fastest there)\n"
+        "      - 5.x for classic Poseidon 4.x, or 6.x more slowly\n"
         "  * nvme.device      - NVMe storage (+ nvmeinfo, nvmeadm)\n"
+        "  * genet.device     - Gigabit Ethernet, in one of two lines:\n"
+        "      - netdev 4.x + bsdsocket.library (the lwip-amiga TCP/IP stack)\n"
+        "      - SANA-II 3.x for Roadshow / AmiTCP / Miami\n"
         "  * openpci.library  - compatibility shim (optional)\n"
         "  * lspci            - PCIe diagnostic tool (optional)\n\n"
         "Version: " #emu68-version
@@ -112,6 +137,10 @@
 ; needs automatically - you can never end up with a driver whose library is
 ; missing.  The library boxes therefore default OFF: leave them unticked and the
 ; drivers bring the libraries along.
+;
+; Ethernet (genet) and USB (xhci) are NOT in this list - each is a
+; mutually-exclusive line choice asked separately below, because the two
+; variants of each cannot coexist.
 ; ---------------------------------------------------------------------------
 
 ; Probe for a resident gic400.library (ROM or expansion module).  When present,
@@ -120,39 +149,110 @@
 (set #gic400-rom (getversion "gic400.library" (resident)))
 
 ; Bit layout of the selection mask:
-;   0 gic400.library  1 bcmpcie.library  2 xhci  3 genet  4 nvme  5 lspci
-; Default 60 = bits 2..5 (all drivers + lspci); libraries derived as needed.
+;   0 gic400.library  1 bcmpcie.library  2 nvme  3 lspci
+; Default 12 = bits 2..3 (nvme + lspci); libraries derived as needed.
 (if (= @user-level 0)
-    (set #features 60)                       ; NOVICE: install the recommended set silently
+    (set #features 12)                       ; NOVICE: install the recommended set silently
     (set #features
         (askoptions
             (prompt "Select the components to install:")
             (help
-                "The drivers (xhci, genet, nvme) and lspci are ticked by default.\n\n"
+                "nvme.device and lspci are ticked by default.\n\n"
                 "gic400.library and bcmpcie.library are required by the drivers and\n"
                 "are installed automatically when you select one - tick them only if\n"
                 "you want a library on its own, without any driver.\n\n"
+                "USB and Ethernet are chosen separately in the next steps.\n\n"
                 @askoptions-help
             )
             (choices
                 "gic400.library  (interrupt controller)"
                 "bcmpcie.library (PCIe bus)"
-                "xhci.device     (USB 3.0)"
-                "genet.device    (Gigabit Ethernet)"
                 "nvme.device     (NVMe storage)"
                 "lspci           (PCIe diagnostic tool)"
             )
-            (default 60)
+            (default 12)
         )
     )
 )
 
 (set #sel-gic400    (IN #features 0))
 (set #sel-bcmpcie   (IN #features 1))
-(set #install-xhci  (IN #features 2))
-(set #install-genet (IN #features 3))
-(set #install-nvme  (IN #features 4))
-(set #install-lspci (IN #features 5))
+(set #install-nvme  (IN #features 2))
+(set #install-lspci (IN #features 3))
+
+; ---------------------------------------------------------------------------
+; USB line - one mutually-exclusive choice.
+;
+; The 6.x driver implements only the context HCD ABI of Poseidon for AmigaOS
+; 6.x.  The 5.x driver speaks the classic Poseidon HCD ABI, which Poseidon 6.x
+; also retains - so 5.x runs on both stacks, while 6.x needs the new one.  Both
+; are called xhci.device, so exactly one USB line can be installed.  Poseidon
+; itself is NOT part of this archive.
+; ---------------------------------------------------------------------------
+(if (= @user-level 0)
+    (set #usb-choice 0)                      ; NOVICE: the current 6.x line
+    (set #usb-choice
+        (askchoice
+            (prompt "USB (xhci.device):")
+            (help
+                "Choose ONE USB driver line.  Poseidon is distributed separately,\n"
+                "so pick by the Poseidon you already have installed:\n\n"
+                "  6.x - needs Poseidon for AmigaOS 6.x.  Real USB 3.0 (no USB 2.0\n"
+                "    emulation) and USB 3.0 bulk streams for fast UAS storage.\n"
+                "    The best choice on that stack.\n\n"
+                "  5.x - required on classic Poseidon 4.x, and also runs on Poseidon\n"
+                "    6.x, which keeps the older interface.  SuperSpeed devices are\n"
+                "    presented to the stack as USB 2.0 and there are no bulk streams,\n"
+                "    so on Poseidon 6.x it is the slower of the two.\n\n"
+                "  None - do not install a USB driver.\n\n"
+                @askchoice-help
+            )
+            (choices
+                "xhci 6.x  (needs Poseidon for AmigaOS 6.x)"
+                "xhci 5.x  (classic Poseidon 4.x, or 6.x more slowly)"
+                "None - no USB driver"
+            )
+            (default 0)
+        )
+    )
+)
+(set #usb-context  (= #usb-choice 0))
+(set #usb-legacy   (= #usb-choice 1))
+(set #install-xhci (OR #usb-context #usb-legacy))
+
+; ---------------------------------------------------------------------------
+; Ethernet line - one mutually-exclusive choice.
+;
+; A SANA-II TCP/IP stack cannot open the netdev driver and the lwip-amiga stack
+; cannot open a SANA-II driver, so exactly one Ethernet line can be installed.
+; ---------------------------------------------------------------------------
+(if (= @user-level 0)
+    (set #net-choice 0)                      ; NOVICE: netdev + lwip-amiga
+    (set #net-choice
+        (askchoice
+            (prompt "Ethernet and TCP/IP:")
+            (help
+                "Choose ONE networking option (they are mutually exclusive):\n\n"
+                "  netdev + lwip-amiga - the modern zero-copy genet.device 4.x plus\n"
+                "    the bundled bsdsocket.library TCP/IP stack.  Installing this\n"
+                "    REPLACES any bsdsocket.library you currently use.\n\n"
+                "  SANA-II - the classic genet.device 3.x for a third-party stack\n"
+                "    (Roadshow, AmiTCP, Miami).  Leaves bsdsocket.library alone.\n\n"
+                "  None - do not install an Ethernet driver.\n\n"
+                @askchoice-help
+            )
+            (choices
+                "netdev genet 4.x + lwip-amiga TCP/IP stack"
+                "SANA-II genet 3.x (Roadshow / AmiTCP / Miami)"
+                "None - no Ethernet driver"
+            )
+            (default 0)
+        )
+    )
+)
+(set #net-netdev    (= #net-choice 0))
+(set #net-sana2     (= #net-choice 1))
+(set #install-genet (OR #net-netdev #net-sana2))
 
 ; openpci.library - optional, off by default, never offered to a NOVICE.
 (if (= @user-level 0)
@@ -179,6 +279,42 @@
     )
 )
 
+; The netdev line replaces the user's bsdsocket.library.  Make them accept that
+; explicitly - declining aborts, since a netdev install without the stack is
+; useless and we must not silently overwrite their TCP/IP library.  This gate runs
+; before anything is installed.
+(if #net-netdev
+    (if (NOT
+            (askbool
+                (prompt
+                    (cat
+                        "The netdev networking option installs lwip-amiga's\n"
+                        "bsdsocket.library, REPLACING any bsdsocket.library you\n"
+                        "currently use.  Any SANA-II TCP/IP stack (Roadshow, AmiTCP,\n"
+                        "Miami) will stop working until you switch back.\n\n"
+                        "Your current bsdsocket.library is backed up to\n"
+                        "bsdsocket.library.orig first.\n\n"
+                        "Allow the installer to replace bsdsocket.library?"
+                    )
+                )
+                (help
+                    "bsdsocket.library is the AmigaOS TCP/IP API library and only one\n"
+                    "can be active.  Choose the SANA-II option instead if you want to\n"
+                    "keep your existing stack."
+                )
+                (default 1)
+            )
+        )
+        (abort
+            (cat
+                "Installation cancelled: the netdev networking option needs to\n"
+                "replace bsdsocket.library, and you declined.\n\n"
+                "Re-run the installer and choose the SANA-II driver or None."
+            )
+        )
+    )
+)
+
 ; ---------------------------------------------------------------------------
 ; Dependency resolution (union of explicit selection and derived needs)
 ; ---------------------------------------------------------------------------
@@ -195,7 +331,7 @@
         (message
             (cat
                 "No components were selected, so nothing has been installed.\n\n"
-                "Run the installer again and tick at least one component."
+                "Run the installer again and select at least one component."
             )
         )
         (exit (quiet))
@@ -216,7 +352,8 @@
 )
 
 ; ---------------------------------------------------------------------------
-; Disk-space check (safety net - the binaries are small)
+; Disk-space check (safety net - the binaries are small).  genet and its tools
+; come from a different subtree per variant, so size the chosen one.
 ; ---------------------------------------------------------------------------
 (set #need-libs 0)
 (set #need-devs 0)
@@ -224,11 +361,13 @@
 (if #install-gic400  (set #need-libs (+ #need-libs (getsize "LIBS/gic400.library"))))
 (if #need-bcmpcie    (set #need-libs (+ #need-libs (getsize "LIBS/bcmpcie.library"))))
 (if #install-openpci (set #need-libs (+ #need-libs (getsize "LIBS/openpci.library"))))
-(if #install-xhci    (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci.device"))))
-(if #install-genet
+(if #usb-context     (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci.device"))))
+(if #usb-legacy      (set #need-devs (+ #need-devs (getsize "Storage/DEVS/USBHardware/xhci.device"))))
+(if #net-netdev      (set #need-devs (+ #need-devs (getsize "DEVS/Networks/genet.device"))))
+(if #net-sana2
     (
-        (set #need-devs (+ #need-devs (getsize "DEVS/Networks/genet.device")))
-        (set #need-c    (+ #need-c (getsize "C/genet-stats")))
+        (set #need-devs (+ #need-devs (getsize "Storage/DEVS/Networks/genet.device")))
+        (set #need-c    (+ #need-c (getsize "Storage/C/genet-stats")))
     )
 )
 (if #install-nvme
@@ -239,6 +378,14 @@
     )
 )
 (if #install-lspci   (set #need-c (+ #need-c (getsize "C/lspci"))))
+(if #net-netdev
+    (
+        (set #need-libs (+ #need-libs (getsize "LIBS/bsdsocket.library")))
+        (set #need-c    (+ #need-c (getsize "C/netdev-stats")))
+        (set #need-c    (+ #need-c (getsize "C/netinfo")))
+        (set #need-c    (+ #need-c (getsize "C/mdns")))
+    )
+)
 
 ; getdiskspace returns -1 when it cannot tell; only abort on a real shortfall.
 (set #free (getdiskspace "LIBS:"))
@@ -267,31 +414,98 @@
 (if #install-gic400  (P_copyver "LIBS/gic400.library"  "LIBS:" "gic400.library"))
 (if #need-bcmpcie    (set #did-bcmpcie (P_copyver "LIBS/bcmpcie.library" "LIBS:" "bcmpcie.library")))
 (if #install-openpci (P_copyver "LIBS/openpci.library" "LIBS:" "openpci.library"))
-(complete 40)
+(complete 30)
 
 ; Devices -> DEVS:
+; xhci.device - force-copy the chosen line (a line switch is a same-name version
+; change, so version-checked copy would refuse the 6.x -> 5.x direction).
 (if #install-xhci
     (
         (makedir "DEVS:USBHardware")
-        (P_copyver "DEVS/USBHardware/xhci.device" "DEVS:USBHardware" "xhci.device")
+        (if #usb-context
+            (P_copyforce "DEVS/USBHardware/xhci.device" "DEVS:USBHardware")
+            (P_copyforce "Storage/DEVS/USBHardware/xhci.device" "DEVS:USBHardware")
+        )
     )
 )
+
+; genet.device - force-copy the chosen variant (a variant switch is a same-name
+; version change, so version-checked copy would refuse a downgrade).
 (if #install-genet
     (
         (makedir "DEVS:Networks")
-        (set #did-genet (P_copyver "DEVS/Networks/genet.device" "DEVS:Networks" "genet.device"))
-        ; genet-stats - SANA-II statistics viewer, kept in lockstep with the driver.
-        (if #did-genet (P_copytool "C/genet-stats" "C:"))
+        (if #net-netdev
+            (P_copyforce "DEVS/Networks/genet.device" "DEVS:Networks")
+            (P_copyforce "Storage/DEVS/Networks/genet.device" "DEVS:Networks")
+        )
     )
 )
+
 (if #install-nvme
     (
         (set #did-nvme (P_copyver "DEVS/nvme.device" "DEVS:" "nvme.device"))
         ; nvmeinfo / nvmeadm - diagnostic and admin tools, kept in lockstep with the driver.
         (if #did-nvme
             (
-                (P_copytool "C/nvmeinfo" "C:")
-                (P_copytool "C/nvmeadm" "C:")
+                (P_copyforce "C/nvmeinfo" "C:")
+                (P_copyforce "C/nvmeadm" "C:")
+            )
+        )
+    )
+)
+(complete 55)
+
+; netdev line -> LIBS:bsdsocket.library (backed up, then force-replaced), its
+; tools, and the config template.  The template lands in ENVARC: only when no
+; netstack.prefs exists yet - a reinstall never clobbers a live configuration.
+(if #net-netdev
+    (
+        (P_backup "LIBS:" "bsdsocket.library")
+        (P_copyforce "LIBS/bsdsocket.library" "LIBS:")
+        (P_copyforce "C/netdev-stats" "C:")
+        (P_copyforce "C/netinfo" "C:")
+        (P_copyforce "C/mdns" "C:")
+        (if (NOT (exists "ENVARC:netstack.prefs" (noreq)))
+            (copyfiles
+                (prompt "Installing the default netstack.prefs (DHCP)...")
+                (help @copyfiles-help)
+                (source "ENVARC/netstack.prefs.default")
+                (dest "ENVARC:")
+                (newname "netstack.prefs")
+            )
+        )
+    )
+)
+
+; SANA-II line -> the genet-stats counter tool, plus an offer to restore a
+; bsdsocket.library that a previous netdev install backed up (so a third-party
+; stack works again).  The SANA-II line installs no bsdsocket of its own.
+(if #net-sana2
+    (
+        (P_copyforce "Storage/C/genet-stats" "C:")
+        (if (exists "LIBS:bsdsocket.library.orig" (noreq))
+            (if (askbool
+                    (prompt
+                        (cat
+                            "A bsdsocket.library backed up by a previous netdev\n"
+                            "install was found.  Restore it so your SANA-II TCP/IP\n"
+                            "stack (Roadshow, AmiTCP, Miami) works again?"
+                        )
+                    )
+                    (help @copyfiles-help)
+                    (default 1)
+                )
+                (
+                    (copyfiles
+                        (prompt "Restoring bsdsocket.library...")
+                        (help @copyfiles-help)
+                        (source "LIBS:bsdsocket.library.orig")
+                        (dest "LIBS:")
+                        (newname "bsdsocket.library")
+                        (optional "force")
+                    )
+                    (delete "LIBS:bsdsocket.library.orig")
+                )
             )
         )
     )
@@ -304,7 +518,7 @@
 ; exists - that existing tool pairs with the library we left in place.
 (if #install-lspci
     (if (OR #did-bcmpcie (NOT (exists "C:lspci" (noreq))))
-        (P_copytool "C/lspci" "C:")
+        (P_copyforce "C/lspci" "C:")
     )
 )
 (complete 100)
@@ -319,7 +533,34 @@
         "running, a reboot is required for the new drivers to take effect."
     )
 )
-(if #install-genet
+(if #usb-context
+    (set #done-msg
+        (cat #done-msg
+            "\n\nxhci.device 6.x needs Poseidon for AmigaOS 6.x, which is distributed\n"
+            "separately.  Install it, then attach the driver with\n"
+            "'AddUSBHardware xhci.device 0'."
+        )
+    )
+)
+(if #usb-legacy
+    (set #done-msg
+        (cat #done-msg
+            "\n\nxhci.device 5.x needs a Poseidon USB stack, distributed separately.\n"
+            "Add it as a USB host controller in Trident.  On Poseidon for AmigaOS\n"
+            "6.x the 6.x driver line is faster - re-run this installer to switch."
+        )
+    )
+)
+(if #net-netdev
+    (set #done-msg
+        (cat #done-msg
+            "\n\nbsdsocket.library configures itself via DHCP the first time an\n"
+            "application opens it.  Driver selection, a static address and the\n"
+            "hostname live in ENVARC:netstack.prefs."
+        )
+    )
+)
+(if #net-sana2
     (set #done-msg
         (cat #done-msg
             "\n\ngenet.device is a SANA-II driver: point a TCP/IP stack such as\n"
