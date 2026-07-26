@@ -13,9 +13,6 @@
 [submodule "components/emu68-pcie-library"]
 	path = components/emu68-pcie-library
 	url = https://github.com/rondoval/emu68-pcie-library.git
-[submodule "components/emu68-xhci-driver"]
-	path = components/emu68-xhci-driver
-	url = https://github.com/rondoval/emu68-xhci-driver.git
 [submodule "components/emu68-nvme-driver"]
 	path = components/emu68-nvme-driver
 	url = https://github.com/rondoval/emu68-nvme-driver
@@ -29,4 +26,12 @@
 [submodule "components/emu68-genet-driver-sana2"]
 	path = components/emu68-genet-driver-sana2
 	url = https://github.com/rondoval/emu68-genet-driver.git
+	branch = main
+[submodule "components/emu68-xhci-driver-context"]
+	path = components/emu68-xhci-driver-context
+	url = https://github.com/rondoval/emu68-xhci-driver.git
+	branch = context_release
+[submodule "components/emu68-xhci-driver-legacy"]
+	path = components/emu68-xhci-driver-legacy
+	url = https://github.com/rondoval/emu68-xhci-driver.git
 	branch = main
