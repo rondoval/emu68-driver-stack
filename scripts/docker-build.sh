@@ -26,7 +26,7 @@
 #                         The package's .lha lands in <EMU68_BUILD_DIR>/package/.
 set -euo pipefail
 
-IMAGE=${EMU68_BUILD_IMAGE:-"ghcr.io/rondoval/amiga-build-container:latest"}
+IMAGE=${EMU68_BUILD_IMAGE:-"ghcr.io/rondoval/amiga-build-container:gcc-v16.1"}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STACK_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 

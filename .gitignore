@@ -4,3 +4,5 @@ install/
 # dual-backend builds (CI release, side-by-side local builds)
 build-*/
 install-*/
+
+.vscode/
