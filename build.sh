@@ -32,6 +32,11 @@
 # Env overrides:
 #     BACKEND=<pistorm|serial|off>  debug sink (default pistorm; use off for a release,
 #                                   which is silent regardless of the tiers below)
+#     FLAVOR=<rangeops|lvo>         cache-op flavor (default rangeops): rangeops emits
+#                                   the inline Emu68 range cache opcodes (needs the
+#                                   Emu68 dcache extensions, runtime-gated); lvo routes
+#                                   through exec CachePreDMA/CachePostDMA and runs on
+#                                   any Emu68 release (the unsuffixed release archives)
 #     TIER=<off|profile|debug|trace> what the stack emits through that sink; a
 #                                   cumulative ladder, default debug:
 #                                     off      nothing
@@ -63,6 +68,11 @@ DEBUG_TIER="${TIER:-debug}"
 TIER_PROFILE="${PROFILE:-}"
 TIER_DEBUG="${DEBUG:-}"
 TIER_TRACE="${TRACE:-}"
+CACHE_FLAVOR="${FLAVOR:-rangeops}"
+case "$CACHE_FLAVOR" in
+    rangeops|lvo) ;;
+    *) echo "FLAVOR must be rangeops or lvo (got: $CACHE_FLAVOR)" >&2; exit 2 ;;
+esac
 ABS_INSTALL="$ROOT/$INSTALL_DIR"
 
 DO_BUILD=0 DO_PACKAGE=0 DO_UPLOAD=0 DRY=0 EXPLICIT=0
@@ -160,6 +170,11 @@ if (( DO_BUILD )); then
     configure_args+=" -DEMU68_PROFILE=$TIER_PROFILE"
     configure_args+=" -DEMU68_DEBUG=$TIER_DEBUG"
     configure_args+=" -DEMU68_TRACE=$TIER_TRACE"
+    if [[ "$CACHE_FLAVOR" == "lvo" ]]; then
+        configure_args+=" -DEMU68_FORCE_LVO_CACHE_OPS=ON"
+    else
+        configure_args+=" -DEMU68_FORCE_LVO_CACHE_OPS=OFF"
+    fi
     [[ -n "${EMU68_CONFIGURE_ARGS:-}" ]] && configure_args+=" $EMU68_CONFIGURE_ARGS"
     export EMU68_CONFIGURE_ARGS="$configure_args"
     export EMU68_BUILD_DIR="$BUILD_DIR"
@@ -169,7 +184,7 @@ if (( DO_BUILD )); then
     [[ -n "${BUILD_IMAGE:-}" ]] && export EMU68_BUILD_IMAGE="$BUILD_IMAGE"
 
     what="building"; (( DO_PACKAGE )) && what="building + packaging"
-    echo ">> $what via scripts/docker-build.sh (backend=$DEBUG_BACKEND tier=$DEBUG_TIER${TIER_PROFILE:+, profile=$TIER_PROFILE}${TIER_DEBUG:+, debug=$TIER_DEBUG}${TIER_TRACE:+, trace=$TIER_TRACE}) ..."
+    echo ">> $what via scripts/docker-build.sh (backend=$DEBUG_BACKEND tier=$DEBUG_TIER flavor=$CACHE_FLAVOR${TIER_PROFILE:+, profile=$TIER_PROFILE}${TIER_DEBUG:+, debug=$TIER_DEBUG}${TIER_TRACE:+, trace=$TIER_TRACE}) ..."
     if (( DO_PACKAGE )); then
         # The `package` target DEPENDS on the full `stack`, so this builds then archives.
         "$ROOT/scripts/docker-build.sh" --target package

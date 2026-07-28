@@ -50,9 +50,10 @@ set(EMU68_DEBUG_COMPONENTS
 
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
-# The fast path needs a private range opcode that only a patched Emu68 build
-# understands, so CI (which builds against a released Emu68) sets this ON; local
-# builds against a patched Emu68 should leave it OFF to get the optimization.
+# Both settings are shipped release flavors: ON builds the standard archives that
+# run on any Emu68 release; OFF (the default) builds the "-rangeops" archives,
+# whose drivers need the dcache extensions (the dcache-range-ops capability); on other
+# firmware their xhci/genet/nvme drivers refuse to load at boot.
 option(EMU68_FORCE_LVO_CACHE_OPS
     "Route cache_pre_dma()/cache_post_dma() through the exec LVO instead of the emu68 inline fast path"
     OFF)
@@ -333,16 +334,38 @@ if(NOT EMU68_DEBUG_BACKEND STREQUAL "off" AND NOT EMU68_TIER STREQUAL "debug")
     string(APPEND DEBUG_BACKEND_DESCRIPTION "\n  Debug tier: ${EMU68_TIER}.")
 endif()
 
-# Suffix the package name by backend so a release can ship multiple variants
-# side by side.  'off' is the production download and carries no suffix (and no
-# tier can change what it contains).  Anything that is not the plain debug build
-# says so, so a profiling or trace archive is never mistaken for it: the baseline
-# tier when it is not the default, and "-mixed" when per-component overrides are
-# in play (which components those are is a developer-local choice, not a name).
-if(EMU68_DEBUG_BACKEND STREQUAL "off")
+# Describe the cache-op flavor the same way — each archive must say which Emu68
+# it runs on, because picking the wrong one is not a cosmetic mistake.
+# RANGEOPS_BUILD (0/1) lets the generated Install script know its own flavor.
+if(EMU68_FORCE_LVO_CACHE_OPS)
+    set(RANGEOPS_BUILD 0)
+    set(CACHE_OPS_DESCRIPTION
+        "Standard build - works on every Emu68 release, but is much slower\n  on an Emu68 without the dcache extensions (see below).")
+    set(CACHE_OPS_FIRMWARE_REQ "Emu68, any release\n    https://github.com/michalsc/Emu68")
+else()
+    set(RANGEOPS_BUILD 1)
+    set(CACHE_OPS_DESCRIPTION
+        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions, which are not part of official Emu68 - a\n  custom build is needed.  On any other firmware xhci.device (6.x),\n  genet.device (4.x) and nvme.device notice this at boot and refuse\n  to load rather than crash (the -serial build logs why); use the\n  standard archive there.")
+    set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (a custom build - not official Emu68; download link to follow)")
+endif()
+
+# Suffix the package name by cache-op flavor and backend so a release can ship
+# multiple variants side by side.  The standard (LVO) flavor is the
+# stock-firmware-safe download and keeps the historical unsuffixed names; the
+# rangeops flavor (the CMake default) needs the dcache extensions and is marked so
+# it can never be mistaken for it.  'off' is the production backend and adds no
+# token (and no tier can change what it contains).  Anything that is not the
+# plain debug build says so, so a profiling or trace archive is never mistaken
+# for it: the baseline tier when it is not the default, and "-mixed" when
+# per-component overrides are in play (which components those are is a
+# developer-local choice, not a name).
+if(EMU68_FORCE_LVO_CACHE_OPS)
     set(PACKAGE_SUFFIX "")
 else()
-    set(PACKAGE_SUFFIX "-${EMU68_DEBUG_BACKEND}")
+    set(PACKAGE_SUFFIX "-rangeops")
+endif()
+if(NOT EMU68_DEBUG_BACKEND STREQUAL "off")
+    string(APPEND PACKAGE_SUFFIX "-${EMU68_DEBUG_BACKEND}")
     if(NOT EMU68_TIER STREQUAL "debug")
         string(APPEND PACKAGE_SUFFIX "-${EMU68_TIER}")
     endif()
@@ -393,6 +416,20 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
   nvme.device            ${NVME_VERSION}
   openpci.library        ${OPENPCI_VERSION}
   bsdsocket.library      ${BSDSOCKET_VERSION}
+
+Archive variants:
+
+  emu68-drivers-${PACKAGE_VERSION}.lha                  standard, debug output off
+  emu68-drivers-${PACKAGE_VERSION}-serial.lha           standard, debug output on serial
+  emu68-drivers-${PACKAGE_VERSION}-rangeops.lha         rangeops, debug output off
+  emu68-drivers-${PACKAGE_VERSION}-rangeops-serial.lha  rangeops, debug output on serial
+
+The standard archives run on any Emu68 release.  The -rangeops archives hold
+the same drivers built to use the dcache extensions and are considerably
+faster, but those extensions are not part of official Emu68 - they need a
+custom Emu68 build (link to follow).  On any other firmware the -rangeops
+xhci/genet/nvme drivers refuse to load rather than crash, so use the standard
+archives there.
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component
@@ -409,7 +446,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -447,6 +484,10 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
+    # Config templates (ENVARC/netstack.prefs.default) — the Install script copies
+    # them to ENVARC: only when the user has no existing prefs.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/ENVARC" "${PACKAGE_STAGE}/ENVARC"
     # SANA-II genet variant (+ genet-stats) installs under Storage/ — present in the
     # archive but not installed; the installer copies genet.device to DEVS:Networks/
     # only if the user picks the SANA-II line.
@@ -498,12 +539,12 @@ add_custom_target(package
         "${CMAKE_CURRENT_SOURCE_DIR}/RELEASE-NOTES.md" "${PACKAGE_STAGE}/RELEASE-NOTES.md"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_BINARY_DIR}/installer/Licenses" "${PACKAGE_STAGE}/Licenses"
-    # Create the LHA archive.  chdir into the staging dir and add its contents (".")
-    # so the tree is flattened: LIBS/, DEVS/, Developer/, Install, ... sit at the
-    # archive root rather than under an emu68-drivers-<ver>/ wrapper directory.
+    # Create the LHA archive.  Add the staging dir's entries by name (shell glob)
+    # so the tree is flattened — LIBS/, DEVS/, Developer/, Install, ... sit at the
+    # archive root rather than under an emu68-drivers-<ver>/ wrapper directory —
+    # and no awkward "." entry ends up in the archive (which `lha a ... .` creates).
     COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_ARCHIVE}"
-    COMMAND ${CMAKE_COMMAND} -E chdir "${PACKAGE_STAGE}"
-        ${LHA_EXECUTABLE} a "${PACKAGE_ARCHIVE}" "."
+    COMMAND sh -c "cd '${PACKAGE_STAGE}' && '${LHA_EXECUTABLE}' a '${PACKAGE_ARCHIVE}' *"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     COMMENT "Creating ${PACKAGE_NAME}.lha"
     VERBATIM

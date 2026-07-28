@@ -9,79 +9,112 @@ BUILD VARIANT
   @DEBUG_BACKEND@
   @DEBUG_BACKEND_DESCRIPTION@
 
-The 'off' archive is the normal download. The 'serial' archive is identical
-except every driver also emits debug output, for troubleshooting.
+  @CACHE_OPS_DESCRIPTION@
+
+Four archives are published for each release. The plain one is the normal
+download and works on every Emu68. The '-rangeops' one holds the same drivers
+built to use the dcache extensions and is considerably faster - but those
+extensions are NOT part of official Emu68. They are a separate change to
+Emu68's JIT that has not been merged upstream, so a custom Emu68 build is
+needed:
+
+  https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
+
+Install '-rangeops' on an Emu68 without them and the Install script tells you
+and stops without changing anything. The '-serial' archives are the same
+drivers again, but they also print diagnostics to the serial port - for
+troubleshooting only.
+
+What the extensions are worth: without them the drivers still work, but the
+housekeeping around every transfer has to be done the slow way and speeds drop
+sharply. Measured TCP throughput over gigabit Ethernet, using genet.device with
+the bundled bsdsocket.library:
+
+  official Emu68,             standard archive   104 Mbit/s in,  79 out
+  Emu68 with the extensions,  standard archive   698 Mbit/s in, 477 out
+  Emu68 with the extensions,  -rangeops archive  near line rate
+
+So on an official Emu68, prefer the SANA-II genet.device with a third-party
+TCP/IP stack - there it is genuinely FASTER than the bundled stack.
 
 
 COMPONENTS
 ----------
 
 gic400.library @GIC400_VERSION@ (LIBS:)
-  ARM GIC-400 interrupt controller library.
-  Required by xhci.device, genet.device, nvme.device, and bcmpcie.library.
-  The installer skips this automatically if a copy is already present in ROM
-  or an expansion resident module.
+  The interrupt controller library every driver here needs, including
+  bcmpcie.library. Installed like any other library in the stack. If your
+  Emu68 carries its own copy, that one is already in memory at boot and the
+  drivers use it, so the LIBS: file is simply never opened - harmless, and it
+  keeps things working on an Emu68 without the library.
 
 bcmpcie.library @BCMPCIE_VERSION@ (LIBS:)
-  BCM2711 PCIe bus library. Initialises the PCIe controller, enumerates
-  devices, allocates BARs, and provides the driver API.
+  Talks to the Pi's PCIe bus: brings the link up, finds the devices on it and
+  makes them available to the drivers.
 
 xhci.device (DEVS:USBHardware/)
-  USB 2.0/3.0 host controller driver for the onboard OTG port and the VIA VL805
-  chip present on every Raspberry Pi 4 board, in two mutually-exclusive lines -
-  you pick ONE at install time. Poseidon itself is NOT part of this archive:
-  choose the line matching the stack you already run.
+  USB 2.0/3.0 for the Raspberry Pi 4 / CM4. Every USB controller it finds is a
+  separate UNIT, and each unit has to be added to your USB stack on its own -
+  which units exist depends on your board. See the driver's own README in
+  Documentation/emu68-xhci-driver-context/ (or .../-legacy/ for the 5.x
+  version) for the unit numbering.
+  The driver comes in two versions and you pick ONE at install time. Poseidon
+  itself is NOT part of this archive: choose the version matching the USB stack
+  you already run.
 
-    6.x @XHCI_VERSION@  for Poseidon for AmigaOS 6.x. Presents real USB 3.0
-      devices to the stack (no USB 2.0 emulation) and supports USB 3.0 bulk
-      streams, the fast UAS path for mass storage.
+    6.x @XHCI_VERSION@  for Poseidon for AmigaOS 6.x. Shows USB 3.0 devices as
+      what they are instead of disguising them as USB 2.0, and supports the
+      fast transfer mode UAS mass storage uses.
 
-    5.x @XHCI_LEGACY_VERSION@  required on classic Poseidon 4.x, and also runs on
-      Poseidon for AmigaOS 6.x, which keeps the older interface - but there it is
-      the slower option: SuperSpeed devices are presented as USB 2.0 and there are
-      no bulk streams. It rides in the archive under Storage/ and is installed to
+    5.x @XHCI_LEGACY_VERSION@  required on classic Poseidon 4.x, and it also
+      runs on Poseidon for AmigaOS 6.x - but there it is the slower choice:
+      SuperSpeed devices appear as USB 2.0 and the fast storage mode is not
+      available. It rides in the archive under Storage/ and is installed to
       DEVS:USBHardware/ only if you choose it.
 
 genet.device (DEVS:Networks/)
-  Gigabit Ethernet for the Genet controller built into the Raspberry Pi 4 / CM4,
-  in two mutually-exclusive lines - you pick ONE at install time:
+  Gigabit Ethernet for the port built into the Raspberry Pi 4 / CM4. It comes
+  in two versions and you pick ONE at install time:
 
-    netdev  @GENET_VERSION@   the modern zero-copy driver for the bundled
-      lwip-amiga TCP/IP stack (bsdsocket.library, below). NOT a SANA-II driver.
+    netdev  @GENET_VERSION@   the driver for the bundled TCP/IP stack
+      (bsdsocket.library, below). It is NOT a SANA-II driver, so Roadshow,
+      AmiTCP and Miami cannot use it. Needs an Emu68 with the dcache
+      extensions to reach its speed - on an official Emu68 it is slower than
+      the SANA-II version (see BUILD VARIANT above).
 
     SANA-II @GENET_SANA2_VERSION@  the classic driver for a third-party TCP/IP
-      stack (Roadshow, AmiTCP, Miami). It rides in the archive under Storage/ and
-      is installed to DEVS:Networks/ only if you choose it; its genet-stats
-      counter tool then installs to C:.
+      stack (Roadshow, AmiTCP, Miami). It rides in the archive under Storage/
+      and is installed to DEVS:Networks/ only if you choose it; its
+      genet-stats counter tool then installs to C:.
 
 bsdsocket.library @BSDSOCKET_VERSION@ (LIBS:)  [lwip-amiga @LWIP_VERSION@]
-  A modern lwIP-based TCP/IP stack, installed with the netdev Ethernet line.
-  Configures itself over DHCP the first time an application opens it; static
-  addressing, hostname and driver selection live in ENVARC:netstack.prefs.
-  Installing it REPLACES any existing bsdsocket.library (your current one is
-  backed up to bsdsocket.library.orig first).
+  A modern TCP/IP stack, installed with the netdev Ethernet version. It
+  configures itself over DHCP the first time an application opens it; a fixed
+  address, the hostname and the driver to use live in ENVARC:netstack.prefs.
+  Installing it REPLACES any existing bsdsocket.library (yours is backed up to
+  bsdsocket.library.orig first).
 
 netdev-stats, netinfo, mdns (C:)
-  Networking CLI tools installed with the netdev line. netdev-stats shows driver
-  and interface counters; netinfo reports the interface and DNS configuration;
-  mdns does multicast-DNS (.local) lookups and announcements.
+  Networking tools installed with the netdev version. netdev-stats shows driver
+  and interface counters; netinfo reports the address and DNS settings the
+  stack ended up with; mdns looks up and announces .local names.
 
 nvme.device @NVME_VERSION@ (DEVS:)
-  NVMe storage driver for PCIe-attached NVMe SSDs.
+  Storage driver for a PCIe-attached NVMe SSD.
 
 nvmeinfo, nvmeadm (C:)
-  Diagnostic and admin CLI tools for nvme.device, installed automatically
-  with the driver. nvmeinfo lists NVMe controllers and namespaces; nvmeadm
-  reports SMART/health, identify, log pages, self-test, and firmware info.
+  Tools for nvme.device, installed automatically with the driver. nvmeinfo
+  lists the drives and their namespaces; nvmeadm reports SMART/health data,
+  log pages, self-test results and firmware information.
 
 openpci.library @OPENPCI_VERSION@ (LIBS:) [optional]
-  Compatibility shim for software that calls OpenLibrary("openpci.library").
-  Forwards calls to bcmpcie.library. Do NOT install if you have a real PCI
-  expansion board (Mediator, Prometheus, G-REX, ...).
+  A compatibility shim for older software that opens "openpci.library" by
+  name; it forwards those calls to bcmpcie.library. Do NOT install it if you
+  have a real PCI expansion board (Mediator, Prometheus, G-REX, ...).
 
 lspci (C:) [optional]
-  CLI tool that lists all devices on the PCIe bus. Run from a Shell to
-  verify the PCIe link is up and devices are enumerated correctly.
+  Lists the devices found on the PCIe bus. Run it from a Shell to check the
+  link is up and everything was detected.
 
 
 INSTALLATION
@@ -90,32 +123,69 @@ INSTALLATION
 Run the included 'Install' script using the Commodore Installer tool
 (v43.3 or later, included with AmigaOS 3.1.4+).
 
-Pick the drivers you want from the checklist, then choose ONE USB line (xhci 6.x,
-xhci 5.x, or none) and ONE Ethernet line (netdev + lwip-amiga, SANA-II, or none)
-when asked; the installer pulls in the libraries they need automatically, so you
-cannot end up with a driver whose library is missing. It never downgrades a newer
-copy already on your system - if an equal or newer version is installed, it asks
-before replacing it. Three things are switched deliberately: the chosen
-xhci.device line, the chosen genet.device variant and, on the netdev line,
-bsdsocket.library are always (re)placed, since switching lines is a same-name
-change that a version check would otherwise refuse.
-gic400.library is skipped automatically when a copy is already resident in ROM
-or an expansion module.
+Pick the components you want from the checklist, then choose ONE USB version
+(xhci 6.x, xhci 5.x, or none) and ONE Ethernet version (netdev + the bundled
+stack, SANA-II, or none) when asked. The installer pulls in the libraries they
+need automatically, so you cannot end up with a driver whose library is
+missing, and it never downgrades a newer copy already on your system - if an
+equal or newer version is installed, it asks first. Three things are always
+replaced, because switching versions keeps the same filename and a version
+check would refuse: the chosen xhci.device, the chosen genet.device and, with
+the netdev choice, bsdsocket.library.
+
+On the -rangeops archives the Install script first checks that your Emu68 has
+the dcache extensions and refuses to continue if it does not. If you are
+preparing a disk on a machine that is not the target, it warns and lets you
+carry on. The small tool it uses for the check runs from the unpacked archive
+and is never copied to C:.
 
 Manual installation: copy files to the destinations listed above and reboot.
+
+
+AFTER INSTALLATION
+------------------
+
+Reboot, then finish the steps the drivers cannot do for themselves. The
+installer's closing screen lists the ones that apply to your selection; the
+full set is:
+
+  xhci 6.x   Install Poseidon for AmigaOS 6.x (distributed separately), then
+             add EACH xhci.device unit as a USB host controller in Trident,
+             or from a Shell with:
+               AddUSBHardware xhci.device <unit>
+             The driver's README in Documentation/ lists the units.
+
+  xhci 5.x   Install a Poseidon USB stack, then add EACH xhci.device unit as a
+             USB host controller in Trident. On Poseidon for AmigaOS 6.x the
+             6.x version is the faster one - re-run the installer to switch.
+
+  netdev     bsdsocket.library configures itself over DHCP the first time an
+             application opens it. A fixed address, the hostname and the
+             driver to use live in ENVARC:netstack.prefs; netinfo shows what
+             the stack ended up with.
+
+  SANA-II    Point your TCP/IP stack (Roadshow, AmiTCP, Miami) at
+             'genet.device' unit 0 before it can carry network traffic.
+
+  nvme       nvmeinfo lists the NVMe drives and namespaces that were found;
+             nvmeadm reports SMART/health data and log pages.
+
+  gic400     Nothing to do. If your Emu68 supplies gic400.library from its own
+             ROM, that copy is already in memory at boot and the drivers use
+             it, so the LIBS: copy simply goes unused.
 
 
 REQUIREMENTS
 ------------
 
-  - Emu68 (https://github.com/michalsc/Emu68) on Raspberry Pi 4 or CM4
+  - Raspberry Pi 4 or CM4 running @CACHE_OPS_FIRMWARE_REQ@
   - AmigaOS 3.x
   - USB stack (for xhci.device): Poseidon, distributed separately. The 6.x
-    driver line needs Poseidon for AmigaOS 6.x; the 5.x line runs on classic
+    driver needs Poseidon for AmigaOS 6.x; the 5.x driver runs on classic
     Poseidon 4.x and on 6.x alike
-  - Networking (for genet.device): the netdev line uses the bundled
-    bsdsocket.library (lwip-amiga); the SANA-II line needs a third-party TCP/IP
-    stack such as Roadshow, AmiTCP or Miami
+  - Networking (for genet.device): the netdev version uses the bundled
+    bsdsocket.library; the SANA-II version needs a third-party TCP/IP stack
+    such as Roadshow, AmiTCP or Miami
 
 
 SOURCE CODE
@@ -127,7 +197,8 @@ SOURCE CODE
 LICENSE
 -------
 
-Each component is covered by its own license (GPL-2.0 or MPL-2.0/GPL-2.0+).
+Each component is covered by its own license: GPL-2.0, MPL-2.0/GPL-2.0+, and
+BSD-3-Clause for lwip-amiga (bsdsocket.library and the networking tools).
 A summary is in the 'Licenses' file at the top of this archive; the full text
 for every component is in the 'Documentation' drawer, one sub-drawer per
 component (with its README and release notes). Per-file SPDX headers in the

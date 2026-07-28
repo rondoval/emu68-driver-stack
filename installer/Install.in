@@ -3,9 +3,22 @@
 ; SPDX-License-Identifier: GPL-2.0+
 ;
 ; NOTE: this is a template.  The build's `package` target generates the real
-; `Install` from it, substituting @PACKAGE_VERSION@ from the CMake project version.
+; `Install` from it, substituting @PACKAGE_VERSION@ from the CMake project
+; version and @RANGEOPS_BUILD@ (0/1) from the cache-op flavor.
+;
+; TEXT BUDGET - the Installer word-wraps display text at about 53 characters
+; (topaz 8; it is really a pixel width, so a wider screen font wraps sooner)
+; into a text area roughly ten lines tall, and pages the overflow behind a
+; "More" button.  Therefore:
+;   (message) (prompt) (abort)  must fit ONE page: <= 10 lines of <= 50 columns
+;   (help)                      may run to ~12 of our lines (it pages) before
+;                               the appended @...-help builtin
+;   (choices) labels            <= 40 characters - a gadget label must not wrap
+; Blank separator lines count.  Anything that does not fit belongs in the
+; ReadMe or in the question's (help).
 
 (set #emu68-version "@PACKAGE_VERSION@")
+(set #rangeops-build @RANGEOPS_BUILD@)
 
 ; A system-wide install spread across LIBS:, DEVS: and C:; there is no single
 ; application directory.  Point @default-dest at SYS: so the Installer's closing
@@ -18,8 +31,9 @@
     (
         (message
             (cat
-                "This installer requires Commodore Installer v43.3 or later.\n"
-                "Please update the Installer tool and try again."
+                "This installer needs Commodore Installer v43.3\n"
+                "or later.  Please update the Installer tool and\n"
+                "try again."
             )
             (all)
         )
@@ -111,22 +125,73 @@
 ; ---------------------------------------------------------------------------
 (message
     (cat
-        "Welcome to the emu68 Driver Stack installer.\n\n"
-        "This package installs AmigaOS drivers for RPI4/CM4\n\n"
-        "  * gic400.library   - ARM GIC-400 interrupt controller\n"
-        "  * bcmpcie.library  - BCM2711 PCIe bus library\n"
-        "  * xhci.device      - USB 2.0/3.0 XHCI, in one of two lines:\n"
-        "      - 6.x needs Poseidon for AmigaOS 6.x (fastest there)\n"
-        "      - 5.x for classic Poseidon 4.x, or 6.x more slowly\n"
-        "  * nvme.device      - NVMe storage (+ nvmeinfo, nvmeadm)\n"
-        "  * genet.device     - Gigabit Ethernet, in one of two lines:\n"
-        "      - netdev 4.x + bsdsocket.library (the lwip-amiga TCP/IP stack)\n"
-        "      - SANA-II 3.x for Roadshow / AmiTCP / Miami\n"
-        "  * openpci.library  - compatibility shim (optional)\n"
-        "  * lspci            - PCIe diagnostic tool (optional)\n\n"
-        "Version: " #emu68-version
+        "Welcome to the emu68 Driver Stack installer.\n"
+        "Version " #emu68-version "\n\n"
+        "AmigaOS drivers for the Raspberry Pi 4 / CM4\n"
+        "running Emu68: USB (xhci), Gigabit Ethernet\n"
+        "(genet + TCP/IP stack), NVMe storage, and the\n"
+        "PCIe and interrupt libraries they need.\n\n"
+        "You choose the parts you want on the next few\n"
+        "screens; the ReadMe describes each one."
     )
     (all)
+)
+
+; ---------------------------------------------------------------------------
+; Firmware capability gate (rangeops archives only).  The drivers in this
+; archive emit inline Emu68 range cache opcodes; C/emu68check asks the
+; firmware (via devicetree.resource) whether it decodes them.  (safe) makes
+; the probe run in PRETEND mode too - it is query-only.
+;   RC 0  capability advertised             -> proceed
+;   RC 5  Emu68 without the extensions      -> abort (wrong archive here)
+;   RC 10 no devicetree.resource            -> not under Emu68: warn, ask
+; Other values (e.g. a corrupt tool) fall through - fail open.
+; ---------------------------------------------------------------------------
+(if #rangeops-build
+    (
+        (set #rangeops-rc (run "C/emu68check RANGEOPS" (safe)))
+        (if (= #rangeops-rc 5)
+            (abort
+                (cat
+                    "Wrong archive for this machine.\n\n"
+                    "The xhci, genet and nvme drivers here use\n"
+                    "inline Emu68 cache opcodes that your Emu68\n"
+                    "does not support, so they would refuse to\n"
+                    "load after installation.\n\n"
+                    "Install the standard (non-rangeops) archive,\n"
+                    "or boot a custom Emu68 build carrying the\n"
+                    "dcache extensions and try again."
+                )
+            )
+        )
+        (if (= #rangeops-rc 10)
+            (if (NOT (askbool
+                        (prompt
+                            (cat
+                                "Emu68 was not detected here (there is no\n"
+                                "devicetree.resource), so the firmware feature\n"
+                                "these drivers need cannot be verified.\n\n"
+                                "If you are preparing a disk for a PiStorm\n"
+                                "machine, make sure it boots a custom Emu68\n"
+                                "carrying the dcache extensions - otherwise\n"
+                                "use the standard archive.\n\n"
+                                "Continue installing anyway?"
+                            )
+                        )
+                        (help
+                            "Installing from a machine that is not the\n"
+                            "target (or not running Emu68 at all) is fine -\n"
+                            "the check simply cannot run here."
+                        )
+                        (default 0)
+                    ))
+                (abort
+                    "Installation cancelled: the rangeops firmware\n"
+                    "requirement could not be verified."
+                )
+            )
+        )
+    )
 )
 
 ; ---------------------------------------------------------------------------
@@ -143,11 +208,6 @@
 ; variants of each cannot coexist.
 ; ---------------------------------------------------------------------------
 
-; Probe for a resident gic400.library (ROM or expansion module).  When present,
-; the drivers open that copy and we skip the LIBS: install unless the user asks
-; for it explicitly.  (getversion ... (resident)) returns 0 when none is resident.
-(set #gic400-rom (getversion "gic400.library" (resident)))
-
 ; Bit layout of the selection mask:
 ;   0 gic400.library  1 bcmpcie.library  2 nvme  3 lspci
 ; Default 12 = bits 2..3 (nvme + lspci); libraries derived as needed.
@@ -158,10 +218,11 @@
             (prompt "Select the components to install:")
             (help
                 "nvme.device and lspci are ticked by default.\n\n"
-                "gic400.library and bcmpcie.library are required by the drivers and\n"
-                "are installed automatically when you select one - tick them only if\n"
-                "you want a library on its own, without any driver.\n\n"
-                "USB and Ethernet are chosen separately in the next steps.\n\n"
+                "gic400.library and bcmpcie.library are needed\n"
+                "by the drivers and are installed automatically\n"
+                "with them - tick a library only if you want it\n"
+                "on its own, with no driver.\n\n"
+                "USB and Ethernet are chosen in the next steps.\n\n"
                 @askoptions-help
             )
             (choices
@@ -195,21 +256,19 @@
         (askchoice
             (prompt "USB (xhci.device):")
             (help
-                "Choose ONE USB driver line.  Poseidon is distributed separately,\n"
-                "so pick by the Poseidon you already have installed:\n\n"
-                "  6.x - needs Poseidon for AmigaOS 6.x.  Real USB 3.0 (no USB 2.0\n"
-                "    emulation) and USB 3.0 bulk streams for fast UAS storage.\n"
-                "    The best choice on that stack.\n\n"
-                "  5.x - required on classic Poseidon 4.x, and also runs on Poseidon\n"
-                "    6.x, which keeps the older interface.  SuperSpeed devices are\n"
-                "    presented to the stack as USB 2.0 and there are no bulk streams,\n"
-                "    so on Poseidon 6.x it is the slower of the two.\n\n"
-                "  None - do not install a USB driver.\n\n"
+                "Choose ONE USB line - Poseidon is distributed\n"
+                "separately, so pick by the one you have.\n\n"
+                "  6.x - needs Poseidon for AmigaOS 6.x.  Real\n"
+                "    USB 3.0 plus bulk streams (fast UAS mass\n"
+                "    storage); the best choice there.\n\n"
+                "  5.x - required on classic Poseidon 4.x, and\n"
+                "    runs on 6.x too, but SuperSpeed appears as\n"
+                "    USB 2.0 with no streams - the slower one.\n\n"
                 @askchoice-help
             )
             (choices
-                "xhci 6.x  (needs Poseidon for AmigaOS 6.x)"
-                "xhci 5.x  (classic Poseidon 4.x, or 6.x more slowly)"
+                "xhci 6.x  (Poseidon for AmigaOS 6.x)"
+                "xhci 5.x  (Poseidon 4.x, or 6.x slower)"
                 "None - no USB driver"
             )
             (default 0)
@@ -232,18 +291,20 @@
         (askchoice
             (prompt "Ethernet and TCP/IP:")
             (help
-                "Choose ONE networking option (they are mutually exclusive):\n\n"
-                "  netdev + lwip-amiga - the modern zero-copy genet.device 4.x plus\n"
-                "    the bundled bsdsocket.library TCP/IP stack.  Installing this\n"
-                "    REPLACES any bsdsocket.library you currently use.\n\n"
-                "  SANA-II - the classic genet.device 3.x for a third-party stack\n"
-                "    (Roadshow, AmiTCP, Miami).  Leaves bsdsocket.library alone.\n\n"
-                "  None - do not install an Ethernet driver.\n\n"
+                "Choose ONE networking option - they are\n"
+                "mutually exclusive.\n\n"
+                "  netdev + lwip-amiga - the modern zero-copy\n"
+                "    genet.device 4.x plus the bundled\n"
+                "    bsdsocket.library.  Installing it REPLACES\n"
+                "    any bsdsocket.library you use now.\n\n"
+                "  SANA-II - the classic genet.device 3.x for a\n"
+                "    third-party stack (Roadshow, AmiTCP,\n"
+                "    Miami).  Leaves bsdsocket.library alone.\n\n"
                 @askchoice-help
             )
             (choices
-                "netdev genet 4.x + lwip-amiga TCP/IP stack"
-                "SANA-II genet 3.x (Roadshow / AmiTCP / Miami)"
+                "netdev genet 4.x + lwip-amiga stack"
+                "SANA-II genet 3.x (third-party stack)"
                 "None - no Ethernet driver"
             )
             (default 0)
@@ -261,18 +322,20 @@
         (askbool
             (prompt
                 (cat
-                    "Install openpci.library? (optional)\n\n"
-                    "A compatibility shim for software that opens 'openpci.library'\n"
-                    "by name.  It forwards calls to bcmpcie.library.\n\n"
-                    "WARNING: Do NOT install if you have a real PCI expansion board\n"
-                    "(Mediator, Prometheus, G-REX, ...) - the name clash will\n"
-                    "break that board's own driver."
+                    "Install openpci.library?  (optional)\n\n"
+                    "A compatibility shim for software that opens\n"
+                    "'openpci.library' by name.\n\n"
+                    "WARNING: do NOT install it if you have a real\n"
+                    "PCI board (Mediator, Prometheus, G-REX ...) -\n"
+                    "the name clash breaks that board's driver."
                 )
             )
             (help
-                "openpci.library is only needed for legacy software that calls\n"
-                "OpenLibrary(\"openpci.library\", ...) and expects the classic\n"
-                "openpci API.  New software should use bcmpcie.library directly."
+                "openpci.library is only needed by older software\n"
+                "that opens 'openpci.library' by name and expects\n"
+                "the classic openpci API.  It forwards those\n"
+                "calls to bcmpcie.library.  New software should\n"
+                "use bcmpcie.library directly."
             )
             (default 0)
         )
@@ -288,28 +351,31 @@
             (askbool
                 (prompt
                     (cat
-                        "The netdev networking option installs lwip-amiga's\n"
-                        "bsdsocket.library, REPLACING any bsdsocket.library you\n"
-                        "currently use.  Any SANA-II TCP/IP stack (Roadshow, AmiTCP,\n"
-                        "Miami) will stop working until you switch back.\n\n"
-                        "Your current bsdsocket.library is backed up to\n"
-                        "bsdsocket.library.orig first.\n\n"
-                        "Allow the installer to replace bsdsocket.library?"
+                        "The netdev option installs lwip-amiga's\n"
+                        "bsdsocket.library, REPLACING the one you use\n"
+                        "now.  Any SANA-II TCP/IP stack (Roadshow,\n"
+                        "AmiTCP, Miami) stops working until you\n"
+                        "switch back.\n\n"
+                        "Your current bsdsocket.library is backed up\n"
+                        "to bsdsocket.library.orig first.\n\n"
+                        "Replace bsdsocket.library?"
                     )
                 )
                 (help
-                    "bsdsocket.library is the AmigaOS TCP/IP API library and only one\n"
-                    "can be active.  Choose the SANA-II option instead if you want to\n"
-                    "keep your existing stack."
+                    "bsdsocket.library is the AmigaOS TCP/IP API\n"
+                    "library and only one can be active.  Choose\n"
+                    "the SANA-II option instead to keep your\n"
+                    "existing stack."
                 )
                 (default 1)
             )
         )
         (abort
             (cat
-                "Installation cancelled: the netdev networking option needs to\n"
-                "replace bsdsocket.library, and you declined.\n\n"
-                "Re-run the installer and choose the SANA-II driver or None."
+                "Installation cancelled: the netdev option needs\n"
+                "to replace bsdsocket.library, and you declined.\n\n"
+                "Run the installer again and choose the SANA-II\n"
+                "driver or None."
             )
         )
     )
@@ -321,33 +387,26 @@
 (set #need-bcmpcie (OR #sel-bcmpcie #install-xhci #install-nvme #install-lspci #install-openpci))
 (set #any-component (OR #need-bcmpcie #install-genet #sel-gic400))
 
-; gic400 is needed by every driver; install it from disk only when no resident
-; copy exists, unless the user ticked it explicitly.
-(set #install-gic400 (OR #sel-gic400 (AND #any-component (= #gic400-rom 0))))
+; gic400 is needed by every driver, so install it like any other library in the
+; stack whenever anything is selected.  P_copyver still refuses to overwrite an
+; equal or newer LIBS: copy without asking.  Note the LIBS: copy goes unused on
+; a machine whose Emu68 supplies gic400.library from its ROM board (that copy is
+; already in exec's library list, so OpenLibrary never reaches LIBS:) - the
+; closing message says so.
+(set #install-gic400 #any-component)
 
 ; Nothing selected at all - nothing to do.
 (if (NOT #any-component)
     (
         (message
             (cat
-                "No components were selected, so nothing has been installed.\n\n"
-                "Run the installer again and select at least one component."
+                "No components were selected, so nothing has\n"
+                "been installed.\n\n"
+                "Run the installer again and select at least\n"
+                "one component."
             )
         )
         (exit (quiet))
-    )
-)
-
-; A dependent needs gic400, a resident copy already exists, and the user did not
-; explicitly ask for the LIBS: copy - tell them we are using the resident one.
-(if (AND (> #gic400-rom 0) (NOT #sel-gic400))
-    (message
-        (cat
-            "gic400.library is already present in ROM or an\n"
-            "expansion resident module - using that copy and\n"
-            "skipping the LIBS: install.\n\n"
-            "The PCIe and network drivers will open the resident library."
-        )
     )
 )
 
@@ -390,15 +449,18 @@
 ; getdiskspace returns -1 when it cannot tell; only abort on a real shortfall.
 (set #free (getdiskspace "LIBS:"))
 (if (AND (> #need-libs 0) (AND (>= #free 0) (< #free #need-libs)))
-    (abort "Not enough free space in LIBS: to install the selected libraries.")
+    (abort "Not enough free space in LIBS: to install\n"
+           "the selected libraries.")
 )
 (set #free (getdiskspace "DEVS:"))
 (if (AND (> #need-devs 0) (AND (>= #free 0) (< #free #need-devs)))
-    (abort "Not enough free space in DEVS: to install the selected drivers.")
+    (abort "Not enough free space in DEVS: to install\n"
+           "the selected drivers.")
 )
 (set #free (getdiskspace "C:"))
 (if (AND (> #need-c 0) (AND (>= #free 0) (< #free #need-c)))
-    (abort "Not enough free space in C: to install the selected tools.")
+    (abort "Not enough free space in C: to install\n"
+           "the selected tools.")
 )
 
 ; ---------------------------------------------------------------------------
@@ -487,9 +549,10 @@
             (if (askbool
                     (prompt
                         (cat
-                            "A bsdsocket.library backed up by a previous netdev\n"
-                            "install was found.  Restore it so your SANA-II TCP/IP\n"
-                            "stack (Roadshow, AmiTCP, Miami) works again?"
+                            "A bsdsocket.library backed up by an earlier\n"
+                            "netdev install was found.  Restore it so your\n"
+                            "SANA-II stack (Roadshow, AmiTCP, Miami) works\n"
+                            "again?"
                         )
                     )
                     (help @copyfiles-help)
@@ -526,47 +589,50 @@
 ; ---------------------------------------------------------------------------
 ; Done
 ; ---------------------------------------------------------------------------
-(set #done-msg
-    (cat
-        "Installation complete.\n\n"
-        "The emu68 drivers are now installed.  If your Amiga is already\n"
-        "running, a reboot is required for the new drivers to take effect."
-    )
-)
+; One headline, then at most one two-line note per topic that was installed,
+; then the ReadMe pointer.  The usb-* and net-* notes are mutually exclusive,
+; so the worst case (USB + Ethernet + gic400) is ten rendered lines - the
+; whole budget.  Any note added here must displace another one.
+(set #done-msg "Installation complete - reboot to activate.\n\n")
 (if #usb-context
     (set #done-msg
         (cat #done-msg
-            "\n\nxhci.device 6.x needs Poseidon for AmigaOS 6.x, which is distributed\n"
-            "separately.  Install it, then attach the driver with\n"
-            "'AddUSBHardware xhci.device 0'."
+            "* xhci 6.x needs Poseidon for AmigaOS 6.x; add\n"
+            "  its units in Trident - see the ReadMe\n"
         )
     )
 )
 (if #usb-legacy
     (set #done-msg
         (cat #done-msg
-            "\n\nxhci.device 5.x needs a Poseidon USB stack, distributed separately.\n"
-            "Add it as a USB host controller in Trident.  On Poseidon for AmigaOS\n"
-            "6.x the 6.x driver line is faster - re-run this installer to switch."
+            "* xhci 5.x needs a Poseidon USB stack; add\n"
+            "  its units in Trident - see the ReadMe\n"
         )
     )
 )
 (if #net-netdev
     (set #done-msg
         (cat #done-msg
-            "\n\nbsdsocket.library configures itself via DHCP the first time an\n"
-            "application opens it.  Driver selection, a static address and the\n"
-            "hostname live in ENVARC:netstack.prefs."
+            "* TCP/IP configures itself by DHCP; settings\n"
+            "  live in ENVARC:netstack.prefs\n"
         )
     )
 )
 (if #net-sana2
     (set #done-msg
         (cat #done-msg
-            "\n\ngenet.device is a SANA-II driver: point a TCP/IP stack such as\n"
-            "Roadshow at 'genet.device' unit 0 before it can carry network traffic."
+            "* point a TCP/IP stack (Roadshow) at\n"
+            "  genet.device unit 0 to carry traffic\n"
         )
     )
 )
-(set #done-msg (cat #done-msg "\n\nSee the ReadMe file for usage notes and version history."))
+(if #install-gic400
+    (set #done-msg
+        (cat #done-msg
+            "* LIBS:gic400.library goes unused if Emu68\n"
+            "  supplies its own copy - harmless\n"
+        )
+    )
+)
+(set #done-msg (cat #done-msg "\nSee the ReadMe for usage notes."))
 (message #done-msg (all))

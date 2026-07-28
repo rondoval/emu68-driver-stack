@@ -70,6 +70,11 @@ jobs:
         run: ./scripts/docker-build.sh
         env:
           # /work is the container mount of the stack root; _pr_component sits under it.
+          # EMU68_FORCE_LVO_CACHE_OPS is left at its default (OFF = the rangeops
+          # flavor) deliberately: that is the superset code path (inline opcode
+          # asm plus the emu68_features.h firmware gate actually compiled), and
+          # the LVO fold is exercised on every stack PR by build.yml's flavor
+          # matrix — a second leg per component PR isn't worth the CI cost.
           EMU68_CONFIGURE_ARGS: "-D${{ inputs.source_dir_var }}=/work/_pr_component"
 
   tag:
