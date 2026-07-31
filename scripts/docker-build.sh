@@ -24,6 +24,8 @@
 #   EMU68_BUILD_DIR       CMake build directory, relative to the workspace (default: build)
 #   EMU68_INSTALL_DIR     Install prefix, relative to the workspace (default: install).
 #                         The package's .lha lands in <EMU68_BUILD_DIR>/package/.
+#   EMU68_SKIP_ABI_CHECK  Set to 1 to skip the post-build register-argument check
+#                         (scripts/check-regargs.py); see that script for what it catches.
 set -euo pipefail
 
 IMAGE=${EMU68_BUILD_IMAGE:-"ghcr.io/rondoval/amiga-build-container:gcc-v16.1"}
@@ -52,6 +54,7 @@ docker run --rm \
 	-e EMU68_CONFIGURE_ARGS \
 	-e EMU68_BUILD_DIR \
 	-e EMU68_INSTALL_DIR \
+	-e EMU68_SKIP_ABI_CHECK \
 	"${IMAGE}" \
-	sh -c 'BD=${EMU68_BUILD_DIR:-build}; ID=/work/${EMU68_INSTALL_DIR:-install}; cmake -S . -B "$BD" -DCMAKE_INSTALL_PREFIX="$ID" ${EMU68_CONFIGURE_ARGS:-} && cmake --build "$BD" "$@"' \
+	sh -c 'BD=${EMU68_BUILD_DIR:-build}; ID=/work/${EMU68_INSTALL_DIR:-install}; cmake -S . -B "$BD" -DCMAKE_INSTALL_PREFIX="$ID" ${EMU68_CONFIGURE_ARGS:-} && cmake --build "$BD" "$@" && { [ "${EMU68_SKIP_ABI_CHECK:-0}" = 1 ] || python3 scripts/check-regargs.py "$BD"; }' \
 	sh "$@"

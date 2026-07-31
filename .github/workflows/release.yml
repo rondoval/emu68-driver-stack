@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         backend: ["off", "serial"]
-        # lvo: cache ops through the exec LVO, runs on any Emu68 release —
+        # lvo: cache ops through the exec LVO, runs on any Emu68 from 1.1 alpha.1 on —
         # ships as the unsuffixed archives. rangeops: inline LINE-F range
         # opcodes, runtime-gated on the /emu68 dcache-range-ops capability
         # — ships as the -rangeops archives.

@@ -1,5 +1,10 @@
 # Release notes — Emu68 driver stack 2.0.0
 
+> **2.0.0 is a big release — treat it as beta.** Nearly everything in the
+> networking path is new: a TCP/IP stack, a new driver ABI, a rewritten Ethernet
+> driver, and a second USB driver line. Keep a bootable backup of your current
+> `LIBS:` and `DEVS:` before installing, and please report what breaks.
+
 The big one: your Amiga gets a TCP/IP stack of its own, USB 3.0 works properly
 on the new Poseidon, and the installer now asks which Ethernet and USB driver
 you want instead of deciding for you.
@@ -16,23 +21,31 @@ you want instead of deciding for you.
   2.0, and adds the fast transfer mode that UAS mass storage uses.
 - **Four archives instead of one** — see *Which archive to install* below.
 
-Every other component moves forward too: `emu68-common` 1.8.0, `gic400.library`
+Every other component moves forward too: `emu68-common` 1.9.0, `gic400.library`
 1.7, `bcmpcie.library` 2.3, `nvme.device` 1.4.
 
 ---
 
 ## Before you upgrade
 
-Two defaults changed in ways that can leave you without a working device if you
-answer the installer wrongly. It asks about both, so read these first.
+Three things can leave you without a working device if you answer the installer
+wrongly. It asks about all of them, so read these first.
+
+**The bundled stack drops every SANA-II interface you have.** The new
+`bsdsocket.library` is not a SANA-II stack: it drives network hardware over the
+new *netdev* interface, and `genet.device` 4.1 is the only driver in existence
+that speaks it. A Zorro or PCMCIA Ethernet card, a USB Ethernet adapter, a PPP
+or SLIP dial-up link — all of those have SANA-II drivers only, and none of them
+will work once the bundled stack is installed. If you use any of them, choose
+the **SANA-II** `genet.device` (3.14) instead.
 
 **Ethernet.** The default `genet.device` (4.1) works only with the bundled
 `bsdsocket.library`. Roadshow, AmiTCP and Miami cannot use it. To keep your
-existing TCP/IP stack, choose the **SANA-II** `genet.device` (3.13) when the
+existing TCP/IP stack, choose the **SANA-II** `genet.device` (3.14) when the
 installer asks. Choosing the bundled stack replaces your current
 `bsdsocket.library` — the old one is kept as `bsdsocket.library.orig`.
 
-**USB.** The default `xhci.device` (6.0) works only with Poseidon for AmigaOS
+**USB.** The default `xhci.device` (6.1) works only with Poseidon for AmigaOS
 6.x; on classic Poseidon 4.x it does nothing at all. On 4.x, choose the **5.x**
 driver when the installer asks. The 5.x driver also runs on Poseidon 6.x, only
 more slowly, so picking it is safe if you are unsure. Poseidon itself is
@@ -40,18 +53,38 @@ distributed separately, so the installer cannot detect which one you have.
 
 ---
 
-## Which archive to install
+## What to download and install
 
-Start with `emu68-drivers-2.0.0.lha` — it runs on every Emu68 release. The
-`-rangeops` archive holds the same drivers built to use the *dcache extensions*
-and is considerably faster, but those extensions are **not part of official
-Emu68**: they are a separate change to Emu68's JIT that has not been merged
-upstream, so a custom Emu68 build is needed:
-[Emu68 v1.1-alpha-with-rangeops](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops).
-Install
-`-rangeops` on an Emu68 without them and the installer tells you and stops
-without changing anything. The `-serial` archives are the same drivers again,
-but they print diagnostics to the serial port — for troubleshooting only.
+**The one thing that decides everything: does your Emu68 have the dcache
+extensions?**
+
+They are not part of official Emu68 — they are a separate change to its JIT that
+has not been merged upstream, so having them means running
+[a custom Emu68 build](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops).
+Without them the drivers still work, but the cache housekeeping around every
+transfer has to be done the slow way — and the bundled TCP/IP stack, which is
+built around that housekeeping being cheap, ends up *slower* than the plain old
+SANA-II driver. So on official Emu68 there is no point installing the netdev
+Ethernet driver at all: take the standard archive and pair the SANA-II driver
+with Roadshow, AmiTCP or Miami. On
+[a custom build with the extensions](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops),
+take the `-rangeops` archive and the netdev driver with the bundled
+`bsdsocket.library`, which gets you close to gigabit line rate. USB is a
+separate, independent question: it depends only on which Poseidon you run.
+
+**Find your row.**
+
+| Your Emu68 | Your Poseidon | Download | Ethernet | USB |
+|---|---|---|---|---|
+| Official, 1.1 alpha.1 or newer | classic 4.x | `emu68-drivers-2.0.0.lha` | **SANA-II** 3.14 + Roadshow / AmiTCP / Miami | `xhci.device` **5.3** |
+| Official, 1.1 alpha.1 or newer | for AmigaOS 6.x | `emu68-drivers-2.0.0.lha` | **SANA-II** 3.14 + Roadshow / AmiTCP / Miami | `xhci.device` **6.1** |
+| Custom build with the dcache extensions | classic 4.x | `emu68-drivers-2.0.0-rangeops.lha` | **netdev** 4.1 + the bundled `bsdsocket.library` | `xhci.device` **5.3** |
+| Custom build with the dcache extensions | for AmigaOS 6.x | `emu68-drivers-2.0.0-rangeops.lha` | **netdev** 4.1 + the bundled `bsdsocket.library` | `xhci.device` **6.1** |
+
+The two `-serial` archives are the same drivers with serial-port diagnostics —
+take one only when chasing a problem. Installing a `-rangeops` archive on an
+Emu68 without the extensions is safe: the installer checks, says so, and stops
+without changing anything.
 
 What the extensions are worth — measured TCP throughput over gigabit Ethernet
 with the bundled stack:
@@ -62,10 +95,8 @@ with the bundled stack:
 | standard | custom build with the extensions | 698 Mb/s | 477 Mb/s |
 | `-rangeops` | custom build with the extensions | near line rate | near line rate |
 
-On an official Emu68 this reverses the usual advice about the Ethernet options:
-there, the SANA-II driver with a third-party TCP/IP stack is *faster* than the
-bundled stack. The technical reason is in
-[docs/BUILDING.md](docs/BUILDING.md#cache-op-routing).
+Why the extensions make that much difference is explained in
+[DEVELOPING.md](https://github.com/rondoval/emu68-driver-stack/blob/main/DEVELOPING.md#the-dcache-extensions).
 
 ---
 
@@ -73,16 +104,16 @@ bundled stack. The technical reason is in
 
 | Component | Version | Detailed notes |
 |---|---|---|
-| `emu68-common` (support library) | **1.8.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.8.0/RELEASE-NOTES.md) |
+| `emu68-common` (support library) | **1.9.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.9.0/RELEASE-NOTES.md) |
 | `gic400.library` | **1.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.7/RELEASE-NOTES.md) |
 | `bcmpcie.library` | **2.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.3/RELEASE-NOTES.md) |
 | `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
-| `xhci.device` (6.x) | **6.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.0/RELEASE-NOTES.md) |
+| `xhci.device` (6.x) | **6.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.1/RELEASE-NOTES.md) |
 | `xhci.device` (5.x) | **5.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.3/RELEASE-NOTES.md) |
 | `genet.device` (4.x, bundled stack) | **4.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v4.1/RELEASE-NOTES.md) |
-| `genet.device` (3.x, SANA-II) | **3.13** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.13/RELEASE-NOTES.md) |
+| `genet.device` (3.x, SANA-II) | **3.14** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.14/RELEASE-NOTES.md) |
 | `nvme.device` | **1.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.4/RELEASE-NOTES.md) |
-| `bsdsocket.library` (lwip-amiga) | **4.102** (lwip-amiga 1.2) | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.2/RELEASE-NOTES.md) |
+| `bsdsocket.library` (lwip-amiga) | **4.103** (lwip-amiga 1.3) | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.3/RELEASE-NOTES.md) |
 
 ---
 
@@ -100,7 +131,7 @@ BSD-3-Clause licensed — the rest of the stack is GPL-2.0 or MPL-2.0/GPL-2.0+.
 The 4.x `genet.device` was rewritten for it. Packets are handed straight between
 the stack and the Ethernet hardware with no copying in between, the Pi computes
 and checks the TCP/IP checksums itself, and interrupts are batched — which is
-where the speeds in the table above come from. The SANA-II driver (3.13) stays
+where the speeds in the table above come from. The SANA-II driver (3.14) stays
 in the archive for anyone using Roadshow, AmiTCP or Miami.
 
 ### USB — real USB 3.0 on Poseidon 6.x
@@ -204,7 +235,7 @@ LINE-F opcode that only a patched Emu68 decodes. The new
 that doesn't carry the opcode, and is forwarded to the components that consume
 `cache_ops.h` — `xhci.device`, `genet.device` and `nvme.device`. CI builds set it
 `ON`, so released binaries keep the LVO path. See
-[docs/BUILDING.md](docs/BUILDING.md#cache-op-routing).
+[DEVELOPING.md](https://github.com/rondoval/emu68-driver-stack/blob/main/DEVELOPING.md#the-dcache-extensions).
 
 ---
 
@@ -438,4 +469,5 @@ No local toolchain? Use `./scripts/docker-build.sh --target package` instead, wh
 builds inside the cross-toolchain container (and provides the `lha` archiver).
 
 Unpack the archive on the Amiga and run the bundled Commodore Installer script.
-See [README.md](README.md) for build details and per-component requirements.
+See the [project README](https://github.com/rondoval/emu68-driver-stack/blob/main/README.md)
+for build details and per-component requirements.

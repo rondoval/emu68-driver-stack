@@ -5,6 +5,11 @@ Compute Module 4 it is running on. If you have a PiStorm with Emu68, this
 package gives you USB, Gigabit Ethernet with a TCP/IP stack, and NVMe solid-state
 storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
 
+> **2.0.0 is a big release — treat it as beta.** Nearly everything in the
+> networking path is new: a TCP/IP stack, a new driver ABI, a rewritten Ethernet
+> driver, and a second USB driver line. Keep a bootable backup of your current
+> `LIBS:` and `DEVS:` before installing, and please report what breaks.
+
 ## What you get
 
 - **USB** — `xhci.device` drives the USB controllers on the Pi 4 / CM4. Each one
@@ -23,78 +28,80 @@ storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
 ## Requirements
 
 - A Raspberry Pi 4 or CM4 running [Emu68](https://github.com/michalsc/Emu68)
+  **1.1 alpha.1 or newer**
 - AmigaOS 3.x
-- For USB: a Poseidon USB stack (not included — see *Choosing your drivers* below)
+- For USB: a Poseidon USB stack (not included — see *What to download and
+  install* below)
 - For the SANA-II Ethernet option: a TCP/IP stack such as Roadshow, AmiTCP or Miami
 
-## Download
+## What to download and install
 
-Take the archive from the [Releases](https://github.com/rondoval/emu68-driver-stack/releases)
-page. Four are published; pick one:
+**The one thing that decides everything: does your Emu68 have the dcache
+extensions?**
 
-| Archive | When to use it |
-|---|---|
-| `emu68-drivers-<ver>.lha` | **Start here.** Works on every Emu68 version. |
-| `emu68-drivers-<ver>-rangeops.lha` | Faster, but needs a custom Emu68 build (see *A note on speed*). |
-| `...-serial.lha`, `...-rangeops-serial.lha` | Same drivers, but they print diagnostics to the serial port. Only for troubleshooting. |
+They are not part of official Emu68 — they are a separate change to its JIT that
+has not been merged upstream, so having them means running
+[a custom Emu68 build](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops).
+Without them the drivers still work, but the cache housekeeping around every
+transfer has to be done the slow way — and the bundled TCP/IP stack, which is
+built around that housekeeping being cheap, ends up *slower* than the plain old
+SANA-II driver. So on official Emu68 there is no point installing the netdev
+Ethernet driver at all: take the standard archive and pair the SANA-II driver
+with Roadshow, AmiTCP or Miami. On
+[a custom build with the extensions](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops),
+take the `-rangeops` archive and the netdev driver with the bundled
+`bsdsocket.library`, which gets you close to gigabit line rate. USB is a
+separate, independent question: it depends only on which Poseidon you run.
 
-If you install a `-rangeops` archive on an Emu68 that does not have the dcache
-extensions, the installer says so and stops — nothing is broken, you just take
-the other archive.
+Archives are on the [Releases](https://github.com/rondoval/emu68-driver-stack/releases)
+page. **Find your row.**
+
+| Your Emu68 | Your Poseidon | Download | Ethernet | USB |
+|---|---|---|---|---|
+| Official, 1.1 alpha.1 or newer | classic 4.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x + Roadshow / AmiTCP / Miami | `xhci.device` **5.x** |
+| Official, 1.1 alpha.1 or newer | for AmigaOS 6.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x + Roadshow / AmiTCP / Miami | `xhci.device` **6.x** |
+| Custom build with the dcache extensions | classic 4.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x + the bundled `bsdsocket.library` | `xhci.device` **5.x** |
+| Custom build with the dcache extensions | for AmigaOS 6.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x + the bundled `bsdsocket.library` | `xhci.device` **6.x** |
+
+**Choosing netdev turns off every other network interface you have.** The
+bundled `bsdsocket.library` is not a SANA-II stack: it drives network hardware
+over the new *netdev* interface, and `genet.device` 4.x is the only driver in
+existence that speaks it. Anything else you connect through — a Zorro or PCMCIA
+Ethernet card, a USB Ethernet adapter, a PPP or SLIP dial-up link — has a
+SANA-II driver only, and will stop working once the bundled stack replaces your
+`bsdsocket.library`. If you need any of them, take the SANA-II row.
+
+The bundled `bsdsocket.library` replaces yours (the old one is kept as
+`bsdsocket.library.orig`); the SANA-II driver leaves your TCP/IP stack alone.
+`xhci.device` 5.x also runs on Poseidon for AmigaOS 6.x, just without real USB
+3.0 or fast UAS storage — so it is the safe answer if you are unsure.
+
+The two `-serial` archives are the same drivers with serial-port diagnostics —
+take one only when chasing a problem. Installing a `-rangeops` archive on an
+Emu68 without the extensions is safe: the installer checks, says so, and stops
+without changing anything.
+
+Where the advice comes from — measured TCP throughput, netdev `genet.device` +
+the bundled stack, on a gigabit LAN:
+
+| Archive | Emu68 | Download | Upload |
+|---|---|---|---|
+| standard | official build | 104 Mb/s | 79 Mb/s |
+| standard | custom build with the extensions | 698 Mb/s | 477 Mb/s |
+| `-rangeops` | custom build with the extensions | near line rate | near line rate |
+
+Why the extensions make that much difference is explained in
+[DEVELOPING.md](DEVELOPING.md#the-dcache-extensions).
 
 ## Installing
 
 1. Unpack the archive on your Amiga.
 2. Run the `Install` script (double-click it, or run it from a Shell).
-3. Answer the questions — see below — and reboot.
+3. Answer the questions — the table above tells you which to pick — and reboot.
 
 The installer only copies what you select, never downgrades a newer file without
 asking, and pulls in the supporting libraries automatically, so you cannot end up
 with a driver whose library is missing.
-
-## Choosing your drivers
-
-Two of the drivers come in **two versions each**, and only one of each can be
-installed. The installer asks you which; pick by what you already run.
-
-**USB — which Poseidon do you have?**
-
-- *Poseidon for AmigaOS 6.x* → choose the **6.x** driver. Real USB 3.0 speeds and
-  fast UAS mass storage.
-- *Classic Poseidon 4.x* → choose the **5.x** driver. It also runs on Poseidon
-  6.x, just more slowly, so choose 6.x if you can.
-
-**Ethernet — which TCP/IP stack do you want?**
-
-- *The bundled one* → choose **netdev + lwip-amiga**. This installs
-  `bsdsocket.library` and replaces the one you have now (your old one is backed
-  up first).
-- *Roadshow, AmiTCP or Miami* → choose **SANA-II**. Your existing TCP/IP stack
-  keeps working untouched.
-
-## A note on speed
-
-The drivers move a lot of data, and how fast they can do it depends on which
-Emu68 you run. The *dcache extensions* make the memory housekeeping around every
-transfer far cheaper — but they are **not part of official Emu68**. They are a
-separate change to Emu68's JIT that has not been merged upstream, so you need a
-custom Emu68 build to get them:
-[Emu68 v1.1-alpha-with-rangeops](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops).
-
-The difference is large:
-
-| Archive | Emu68 | Download speed | Upload speed |
-|---|---|---|---|
-| standard | official build | 104 Mb/s | 79 Mb/s |
-| standard | custom build with the dcache extensions | 698 Mb/s | 477 Mb/s |
-| `-rangeops` | custom build with the dcache extensions | near gigabit line rate | near gigabit line rate |
-
-On an official Emu68 — which is what most people run — take the standard archive
-and choose the **SANA-II** Ethernet option with a third-party TCP/IP stack: there
-it is genuinely faster than the bundled stack, which is built around the cheap
-housekeeping the extensions provide. If you do run a build that carries them,
-install the `-rangeops` archive. The technical reason is in
-[docs/BUILDING.md](docs/BUILDING.md#cache-op-routing).
 
 ## Documentation and licences
 
@@ -120,6 +127,6 @@ cd emu68-driver-stack
 ./scripts/docker-build.sh --target package  # ...and make the .lha
 ```
 
-- [docs/BUILDING.md](docs/BUILDING.md) — toolchain, build options, the debug
-  backend and tiers, cache-op routing, packaging
-- [docs/RELEASING.md](docs/RELEASING.md) — versioning and the release process
+[DEVELOPING.md](DEVELOPING.md) covers the toolchain, the build options, the
+debug backend and tiers, the cache-op flavors, packaging and the release
+process.

@@ -12,6 +12,25 @@ endif()
 set(EMU68_DRIVER_STACK_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake" CACHE FILEPATH "Toolchain file used for all component builds")
 set(EMU68_TOOLCHAIN_BIN_DIR "/opt/m68k-amigaos/bin" CACHE PATH "Directory added to PATH for component builds")
 
+# The toolchain file's user-facing knobs are cache variables *with defaults*, and every
+# component is an ExternalProject with its own FRESH cache — so a -DM68K_CPU=68060 on the
+# superbuild would stop here and each component would silently re-default to 68040.
+# Forward whichever knobs were actually set; passing an empty value would be worse than
+# not passing it (-m, -mcrt=), hence the DEFINED guard. No explicit type: CMake creates
+# them UNINITIALIZED and the toolchain file's own set(... CACHE ...) corrects the type.
+set(EMU68_TOOLCHAIN_KNOBS
+    M68K_CPU M68K_FPU M68K_CRT TOOLCHAIN_PATH
+    TOOLCHAIN_CFLAGS TOOLCHAIN_CXXFLAGS TOOLCHAIN_LDFLAGS TOOLCHAIN_COMMON)
+set(EMU68_TOOLCHAIN_ARGS "")
+foreach(_knob IN LISTS EMU68_TOOLCHAIN_KNOBS)
+    if(DEFINED ${_knob})
+        list(APPEND EMU68_TOOLCHAIN_ARGS "-D${_knob}=${${_knob}}")
+    endif()
+endforeach()
+if(EMU68_TOOLCHAIN_ARGS)
+    message(STATUS "Forwarding toolchain knobs to components: ${EMU68_TOOLCHAIN_ARGS}")
+endif()
+
 # Debug-output backend (sink) for the whole stack (see emu68-common/include/debug.h):
 #   pistorm (default) - RawDoFmt -> magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
 #   serial            - debug.lib KPrintF -> console (serial @ 9600). Not ROM-able.
@@ -51,7 +70,7 @@ set(EMU68_DEBUG_COMPONENTS
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
 # Both settings are shipped release flavors: ON builds the standard archives that
-# run on any Emu68 release; OFF (the default) builds the "-rangeops" archives,
+# run on any Emu68 from 1.1 alpha.1 on; OFF (the default) builds the "-rangeops" archives,
 # whose drivers need the dcache extensions (the dcache-range-ops capability); on other
 # firmware their xhci/genet/nvme drivers refuse to load at boot.
 option(EMU68_FORCE_LVO_CACHE_OPS
@@ -217,6 +236,7 @@ function(add_stack_project target source_dir)
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${EMU68_DRIVER_STACK_TOOLCHAIN_FILE}
             -DCMAKE_INSTALL_PREFIX:PATH=${_install_prefix}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
+            ${EMU68_TOOLCHAIN_ARGS}
             ${_debug_args}
             ${_cache_ops_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
@@ -340,13 +360,13 @@ endif()
 if(EMU68_FORCE_LVO_CACHE_OPS)
     set(RANGEOPS_BUILD 0)
     set(CACHE_OPS_DESCRIPTION
-        "Standard build - works on every Emu68 release, but is much slower\n  on an Emu68 without the dcache extensions (see below).")
-    set(CACHE_OPS_FIRMWARE_REQ "Emu68, any release\n    https://github.com/michalsc/Emu68")
+        "Standard build - runs on any Emu68 from 1.1 alpha.1 on, but is much\n  slower on an Emu68 without the dcache extensions (see below).")
+    set(CACHE_OPS_FIRMWARE_REQ "Emu68 1.1 alpha.1 or newer\n    https://github.com/michalsc/Emu68")
 else()
     set(RANGEOPS_BUILD 1)
     set(CACHE_OPS_DESCRIPTION
         "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions, which are not part of official Emu68 - a\n  custom build is needed.  On any other firmware xhci.device (6.x),\n  genet.device (4.x) and nvme.device notice this at boot and refuse\n  to load rather than crash (the -serial build logs why); use the\n  standard archive there.")
-    set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (a custom build - not official Emu68; download link to follow)")
+    set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (a custom build - not official Emu68)\n    https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops")
 endif()
 
 # Suffix the package name by cache-op flavor and backend so a release can ship
@@ -424,12 +444,26 @@ Archive variants:
   emu68-drivers-${PACKAGE_VERSION}-rangeops.lha         rangeops, debug output off
   emu68-drivers-${PACKAGE_VERSION}-rangeops-serial.lha  rangeops, debug output on serial
 
-The standard archives run on any Emu68 release.  The -rangeops archives hold
-the same drivers built to use the dcache extensions and are considerably
-faster, but those extensions are not part of official Emu68 - they need a
-custom Emu68 build (link to follow).  On any other firmware the -rangeops
-xhci/genet/nvme drivers refuse to load rather than crash, so use the standard
-archives there.
+Which one to take:
+
+  Emu68            Poseidon  Archive             Ethernet     USB
+  ---------------  --------  ------------------  -----------  ------
+  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x  5.x
+  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x  6.x
+  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x   5.x
+  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x   6.x
+
+The standard archives run on any Emu68 from 1.1 alpha.1 on.  The -rangeops
+archives hold the same drivers built to use the dcache extensions and are
+considerably faster, but those extensions are not part of official Emu68 -
+they need a custom Emu68 build:
+
+  https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
+
+On any other firmware the -rangeops xhci/genet/nvme drivers refuse to load
+rather than crash, so use the standard archives there.  Without the extensions
+the bundled TCP/IP stack is slower than the SANA-II driver with Roadshow,
+AmiTCP or Miami - which is why the standard rows above pick SANA-II.
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component

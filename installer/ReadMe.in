@@ -2,40 +2,78 @@ emu68 Driver Stack @PACKAGE_VERSION@
 ====================================
 AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
 
+*** @PACKAGE_VERSION@ is a big release - treat it as beta. Nearly everything
+*** in the networking path is new: a TCP/IP stack, a new driver ABI, a
+*** rewritten Ethernet driver, and a second USB driver line. Keep a bootable
+*** backup of your current LIBS: and DEVS: before installing, and please
+*** report what breaks.
 
-BUILD VARIANT
--------------
+
+THIS ARCHIVE
+------------
 
   @DEBUG_BACKEND@
   @DEBUG_BACKEND_DESCRIPTION@
 
   @CACHE_OPS_DESCRIPTION@
 
-Four archives are published for each release. The plain one is the normal
-download and works on every Emu68. The '-rangeops' one holds the same drivers
-built to use the dcache extensions and is considerably faster - but those
-extensions are NOT part of official Emu68. They are a separate change to
-Emu68's JIT that has not been merged upstream, so a custom Emu68 build is
-needed:
+
+WHAT TO INSTALL
+---------------
+
+The one thing that decides everything: does your Emu68 have the dcache
+extensions? They are not part of official Emu68 - they are a separate change to
+its JIT that has not been merged upstream, so having them means running a
+custom Emu68 build:
 
   https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
 
-Install '-rangeops' on an Emu68 without them and the Install script tells you
-and stops without changing anything. The '-serial' archives are the same
-drivers again, but they also print diagnostics to the serial port - for
-troubleshooting only.
+Without them the drivers still work, but the cache housekeeping around every
+transfer has to be done the slow way - and the bundled TCP/IP stack, which is
+built around that housekeeping being cheap, ends up SLOWER than the plain old
+SANA-II driver. So on official Emu68 there is no point installing the netdev
+Ethernet driver at all: take the standard archive and pair the SANA-II driver
+with Roadshow, AmiTCP or Miami. On a custom build with the extensions, take the
+'-rangeops' archive and the netdev driver with the bundled bsdsocket.library,
+which gets you close to gigabit line rate. USB is a separate, independent
+question: it depends only on which Poseidon you run.
 
-What the extensions are worth: without them the drivers still work, but the
-housekeeping around every transfer has to be done the slow way and speeds drop
-sharply. Measured TCP throughput over gigabit Ethernet, using genet.device with
-the bundled bsdsocket.library:
+Find your row:
+
+  Emu68            Poseidon  Archive             Ethernet     USB
+  ---------------  --------  ------------------  -----------  ------
+  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x  5.x
+  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x  6.x
+  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x   5.x
+  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x   6.x
+
+  official 1.1a1+  Emu68 1.1 alpha.1 or newer, official build
+  custom+dcache    a custom Emu68 build carrying the dcache extensions
+  4.x / 6.x        classic Poseidon 4.x / Poseidon for AmigaOS 6.x
+  <ver>.lha        emu68-drivers-@PACKAGE_VERSION@.lha
+
+CHOOSING NETDEV TURNS OFF EVERY OTHER NETWORK INTERFACE YOU HAVE. The bundled
+bsdsocket.library is not a SANA-II stack: it drives network hardware over the
+new netdev interface, and genet.device 4.x is the only driver in existence that
+speaks it. Anything else you connect through - a Zorro or PCMCIA Ethernet card,
+a USB Ethernet adapter, a PPP or SLIP dial-up link - has a SANA-II driver only,
+and will stop working once the bundled stack replaces your bsdsocket.library.
+If you need any of them, take a SANA-II row.
+
+xhci.device 5.x also runs on Poseidon for AmigaOS 6.x, just without real USB
+3.0 or fast UAS storage - so it is the safe answer if you are unsure.
+
+The two '-serial' archives are the same drivers with serial-port diagnostics -
+take one only when chasing a problem. Installing a '-rangeops' archive on an
+Emu68 without the extensions is safe: the Install script checks, says so, and
+stops without changing anything.
+
+Where the advice comes from - measured TCP throughput over gigabit Ethernet,
+using genet.device with the bundled bsdsocket.library:
 
   official Emu68,             standard archive   104 Mbit/s in,  79 out
   Emu68 with the extensions,  standard archive   698 Mbit/s in, 477 out
   Emu68 with the extensions,  -rangeops archive  near line rate
-
-So on an official Emu68, prefer the SANA-II genet.device with a third-party
-TCP/IP stack - there it is genuinely FASTER than the bundled stack.
 
 
 COMPONENTS
@@ -58,29 +96,26 @@ xhci.device (DEVS:USBHardware/)
   which units exist depends on your board. See the driver's own README in
   Documentation/emu68-xhci-driver-context/ (or .../-legacy/ for the 5.x
   version) for the unit numbering.
-  The driver comes in two versions and you pick ONE at install time. Poseidon
-  itself is NOT part of this archive: choose the version matching the USB stack
-  you already run.
+  The driver comes in two versions and you pick ONE at install time (see WHAT
+  TO INSTALL above). Poseidon itself is NOT part of this archive.
 
     6.x @XHCI_VERSION@  for Poseidon for AmigaOS 6.x. Shows USB 3.0 devices as
       what they are instead of disguising them as USB 2.0, and supports the
       fast transfer mode UAS mass storage uses.
 
     5.x @XHCI_LEGACY_VERSION@  required on classic Poseidon 4.x, and it also
-      runs on Poseidon for AmigaOS 6.x - but there it is the slower choice:
-      SuperSpeed devices appear as USB 2.0 and the fast storage mode is not
-      available. It rides in the archive under Storage/ and is installed to
-      DEVS:USBHardware/ only if you choose it.
+      runs on Poseidon for AmigaOS 6.x - but there SuperSpeed devices appear
+      as USB 2.0 and the fast storage mode is not available. It rides in the
+      archive under Storage/ and is installed to DEVS:USBHardware/ only if you
+      choose it.
 
 genet.device (DEVS:Networks/)
   Gigabit Ethernet for the port built into the Raspberry Pi 4 / CM4. It comes
-  in two versions and you pick ONE at install time:
+  in two versions and you pick ONE at install time (see WHAT TO INSTALL above):
 
     netdev  @GENET_VERSION@   the driver for the bundled TCP/IP stack
       (bsdsocket.library, below). It is NOT a SANA-II driver, so Roadshow,
-      AmiTCP and Miami cannot use it. Needs an Emu68 with the dcache
-      extensions to reach its speed - on an official Emu68 it is slower than
-      the SANA-II version (see BUILD VARIANT above).
+      AmiTCP and Miami cannot use it.
 
     SANA-II @GENET_SANA2_VERSION@  the classic driver for a third-party TCP/IP
       stack (Roadshow, AmiTCP, Miami). It rides in the archive under Storage/
@@ -93,6 +128,11 @@ bsdsocket.library @BSDSOCKET_VERSION@ (LIBS:)  [lwip-amiga @LWIP_VERSION@]
   address, the hostname and the driver to use live in ENVARC:netstack.prefs.
   Installing it REPLACES any existing bsdsocket.library (yours is backed up to
   bsdsocket.library.orig first).
+  It is NOT a SANA-II stack - it talks to network hardware over the new netdev
+  interface, and genet.device 4.x is the only driver that speaks it. Any other
+  network interface you use (Zorro or PCMCIA Ethernet card, USB Ethernet
+  adapter, PPP or SLIP dial-up) has a SANA-II driver only and will stop working
+  once this library is installed.
 
 netdev-stats, netinfo, mdns (C:)
   Networking tools installed with the netdev version. netdev-stats shows driver
