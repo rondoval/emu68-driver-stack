@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 1.2.3 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.0.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -12,56 +12,141 @@ endif()
 set(EMU68_DRIVER_STACK_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake" CACHE FILEPATH "Toolchain file used for all component builds")
 set(EMU68_TOOLCHAIN_BIN_DIR "/opt/m68k-amigaos/bin" CACHE PATH "Directory added to PATH for component builds")
 
-# Debug-output backend for the whole stack (see emu68-common/include/debug.h):
+# The toolchain file's user-facing knobs are cache variables *with defaults*, and every
+# component is an ExternalProject with its own FRESH cache — so a -DM68K_CPU=68060 on the
+# superbuild would stop here and each component would silently re-default to 68040.
+# Forward whichever knobs were actually set; passing an empty value would be worse than
+# not passing it (-m, -mcrt=), hence the DEFINED guard. No explicit type: CMake creates
+# them UNINITIALIZED and the toolchain file's own set(... CACHE ...) corrects the type.
+set(EMU68_TOOLCHAIN_KNOBS
+    M68K_CPU M68K_FPU M68K_CRT TOOLCHAIN_PATH
+    TOOLCHAIN_CFLAGS TOOLCHAIN_CXXFLAGS TOOLCHAIN_LDFLAGS TOOLCHAIN_COMMON)
+set(EMU68_TOOLCHAIN_ARGS "")
+foreach(_knob IN LISTS EMU68_TOOLCHAIN_KNOBS)
+    if(DEFINED ${_knob})
+        list(APPEND EMU68_TOOLCHAIN_ARGS "-D${_knob}=${${_knob}}")
+    endif()
+endforeach()
+if(EMU68_TOOLCHAIN_ARGS)
+    message(STATUS "Forwarding toolchain knobs to components: ${EMU68_TOOLCHAIN_ARGS}")
+endif()
+
+# Debug-output backend (sink) for the whole stack (see emu68-common/include/debug.h):
 #   pistorm (default) - RawDoFmt -> magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
 #   serial            - debug.lib KPrintF -> console (serial @ 9600). Not ROM-able.
-#   off               - debug fully compiled out.
+#   off               - no sink; the whole stack is silent whatever the tiers say.
 # Propagated to every component below so a single backend is used consistently.
 set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
 set_property(CACHE EMU68_DEBUG_BACKEND PROPERTY STRINGS pistorm serial off)
 
-# Verbose ("high") debug logging (debug.h KprintfH / DEBUG_HIGH).  Independent of
-# the backend, but requires DEBUG (i.e. backend != off) to actually emit anything.
-# Value: a list of the stack component target names below to build with DEBUG_HIGH,
-# or ALL for every debug-emitting component.  Empty (default) = off everywhere.
-#   e.g. -DEMU68_DEBUG_HIGH=emu68-pcie-library
-# Propagated per-component as a boolean by add_stack_project() below.
-set(EMU68_DEBUG_HIGH "" CACHE STRING "Components to build with verbose DEBUG_HIGH logging (list, or ALL)")
+# Debug tier - what a component emits through that sink (see the ladder in
+# emu68-common/cmake/Emu68CommonDebug.cmake):
+#   off | profile (timing only) | debug (asserts + logging) | trace (verbose)
+# EMU68_TIER is the stack-wide baseline; the three lists below pin individual
+# components to a different rung, so any baseline/exception mix is expressible:
+#   -DEMU68_TIER=off -DEMU68_PROFILE=lwip-amiga   silent stack, nsprof numbers only
+#   -DEMU68_TIER=profile -DEMU68_TRACE=emu68-nvme-driver
+# Each list takes component target names from EMU68_DEBUG_COMPONENTS, or ALL.
+# add_stack_project() resolves baseline + lists into one per-component EMU68_TIER.
+set(EMU68_TIER "debug" CACHE STRING "Stack-wide debug tier baseline: off | profile | debug | trace")
+set_property(CACHE EMU68_TIER PROPERTY STRINGS off profile debug trace)
+set(EMU68_PROFILE "" CACHE STRING "Components pinned to the profile tier (list, or ALL)")
+set(EMU68_DEBUG   "" CACHE STRING "Components pinned to the debug tier (list, or ALL)")
+set(EMU68_TRACE   "" CACHE STRING "Components pinned to the trace tier (list, or ALL)")
 
 # Components that emit debug output (consume emu68-common's debug.h); the only ones
-# for which EMU68_DEBUG_HIGH is meaningful.  Used to reject typos in the list.
+# for which a tier is meaningful.  Used to reject typos in the lists above.
 set(EMU68_DEBUG_COMPONENTS
     emu68-common
     emu68-gic400-library
     emu68-pcie-library
-    emu68-xhci-driver
-    emu68-genet-driver
-    emu68-nvme-driver)
+    emu68-xhci-driver-context
+    emu68-xhci-driver-legacy
+    emu68-genet-driver-netdev
+    emu68-genet-driver-sana2
+    emu68-nvme-driver
+    lwip-amiga)
 
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
-# The fast path needs a private range opcode that only a patched Emu68 build
-# understands, so CI (which builds against a released Emu68) sets this ON; local
-# builds against a patched Emu68 should leave it OFF to get the optimization.
+# Both settings are shipped release flavors: ON builds the standard archives that
+# run on any Emu68 from 1.1 alpha.1 on; OFF (the default) builds the "-rangeops" archives,
+# whose drivers need the dcache extensions (the dcache-range-ops capability); on other
+# firmware their xhci/genet/nvme drivers refuse to load at boot.
 option(EMU68_FORCE_LVO_CACHE_OPS
     "Route cache_pre_dma()/cache_post_dma() through the exec LVO instead of the emu68 inline fast path"
     OFF)
 
 # Components whose sources include cache_ops.h and so need the flag above forwarded.
+# The legacy (5.x) xhci line predates cache_ops.h and is deliberately absent.
 set(EMU68_CACHE_OPS_COMPONENTS
-    emu68-xhci-driver
-    emu68-genet-driver
+    emu68-xhci-driver-context
+    emu68-genet-driver-netdev
     emu68-nvme-driver)
 
-if(NOT EMU68_DEBUG_HIGH STREQUAL "ALL")
-    foreach(_dh ${EMU68_DEBUG_HIGH})
-        if(NOT _dh IN_LIST EMU68_DEBUG_COMPONENTS)
+# The tier-override lists, in ascending rung order.  A component may appear in at
+# most one; each entry must name a debug-emitting component (or the list is ALL).
+set(EMU68_TIER_OVERRIDE_LISTS EMU68_PROFILE EMU68_DEBUG EMU68_TRACE)
+
+if(NOT EMU68_TIER MATCHES "^(off|profile|debug|trace)$")
+    message(FATAL_ERROR "EMU68_TIER must be off, profile, debug or trace (got '${EMU68_TIER}')")
+endif()
+
+set(_seen_components "")
+set(_all_list "")
+foreach(_list IN LISTS EMU68_TIER_OVERRIDE_LISTS)
+    if(${_list} STREQUAL "ALL")
+        if(NOT _all_list STREQUAL "")
             message(FATAL_ERROR
-                "EMU68_DEBUG_HIGH entry '${_dh}' is not a debug-emitting component.\n"
+                "${_all_list} and ${_list} are both ALL; a component has exactly one tier.")
+        endif()
+        set(_all_list "${_list}")
+        continue()
+    endif()
+    foreach(_c IN LISTS ${_list})
+        if(NOT _c IN_LIST EMU68_DEBUG_COMPONENTS)
+            message(FATAL_ERROR
+                "${_list} entry '${_c}' is not a debug-emitting component.\n"
                 "Valid values: ALL or any of: ${EMU68_DEBUG_COMPONENTS}")
         endif()
+        if(_c IN_LIST _seen_components)
+            message(FATAL_ERROR
+                "Component '${_c}' is named in more than one of "
+                "${EMU68_TIER_OVERRIDE_LISTS}; a component has exactly one tier.")
+        endif()
+        list(APPEND _seen_components "${_c}")
     endforeach()
+endforeach()
+if(NOT _all_list STREQUAL "" AND NOT _seen_components STREQUAL "")
+    message(FATAL_ERROR
+        "${_all_list}=ALL already covers every component, but ${_seen_components} "
+        "is also pinned elsewhere; a component has exactly one tier.")
 endif()
+
+# Tier knobs are meaningless without a sink - say so rather than silently ignoring
+# them, which is how a "profiling" build could quietly produce nothing.
+if(EMU68_DEBUG_BACKEND STREQUAL "off")
+    if(NOT EMU68_TIER STREQUAL "debug" OR NOT _seen_components STREQUAL "" OR NOT _all_list STREQUAL "")
+        message(WARNING
+            "EMU68_DEBUG_BACKEND=off: the whole stack is silent, so EMU68_TIER and the "
+            "${EMU68_TIER_OVERRIDE_LISTS} lists have no effect.")
+    endif()
+endif()
+
+# emu68_resolve_tier(<out> <component>)
+# The component's own rung: its override list if it is named in one, else the
+# stack-wide baseline.
+function(emu68_resolve_tier out component)
+    foreach(_list IN LISTS EMU68_TIER_OVERRIDE_LISTS)
+        if(${_list} STREQUAL "ALL" OR component IN_LIST ${_list})
+            string(REGEX REPLACE "^EMU68_" "" _rung "${_list}")
+            string(TOLOWER "${_rung}" _rung)
+            set(${out} "${_rung}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out} "${EMU68_TIER}" PARENT_SCOPE)
+endfunction()
 
 # Default source directories point to the bundled submodules.
 # Override any of these with -D<VAR>=/path/to/your/checkout for local development.
@@ -70,9 +155,12 @@ set(MAILBOX_RESOURCE_SOURCE_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/components/mailb
 set(EMU68_COMMON_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-common"        CACHE PATH "Path to emu68-common sources")
 set(EMU68_GIC400_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-gic400-library" CACHE PATH "Path to emu68-gic400-library sources")
 set(EMU68_PCIE_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-pcie-library"  CACHE PATH "Path to emu68-pcie-library sources")
-set(EMU68_XHCI_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver"   CACHE PATH "Path to emu68-xhci-driver sources")
-set(EMU68_GENET_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver"  CACHE PATH "Path to emu68-genet-driver sources")
+set(EMU68_XHCI_CONTEXT_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver-context" CACHE PATH "Path to emu68-xhci-driver-context (6.x, context HCD ABI) sources")
+set(EMU68_XHCI_LEGACY_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver-legacy"  CACHE PATH "Path to emu68-xhci-driver-legacy (5.x, classic Poseidon HCD ABI) sources")
+set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-netdev"  CACHE PATH "Path to emu68-genet-driver-netdev (4.x, netdev ABI) sources")
+set(EMU68_GENET_SANA2_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-sana2"   CACHE PATH "Path to emu68-genet-driver-sana2 (3.x, SANA-II) sources")
 set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
+set(LWIP_AMIGA_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/lwip-amiga"          CACHE PATH "Path to lwip-amiga sources")
 
 # Validate required paths
 foreach(required_path
@@ -82,9 +170,12 @@ foreach(required_path
     EMU68_COMMON_SOURCE_DIR
     EMU68_GIC400_SOURCE_DIR
     EMU68_PCIE_SOURCE_DIR
-    EMU68_XHCI_SOURCE_DIR
-    EMU68_GENET_SOURCE_DIR
-    EMU68_NVME_SOURCE_DIR)
+    EMU68_XHCI_CONTEXT_SOURCE_DIR
+    EMU68_XHCI_LEGACY_SOURCE_DIR
+    EMU68_GENET_NETDEV_SOURCE_DIR
+    EMU68_GENET_SANA2_SOURCE_DIR
+    EMU68_NVME_SOURCE_DIR
+    LWIP_AMIGA_SOURCE_DIR)
     if(NOT EXISTS "${${required_path}}")
         message(FATAL_ERROR
             "Required path does not exist: ${required_path}='${${required_path}}'\n"
@@ -102,24 +193,32 @@ endif()
 # Function to add stack projects
 function(add_stack_project target source_dir)
     set(options)
-    set(oneValueArgs)
+    set(oneValueArgs INSTALL_PREFIX)
     set(multiValueArgs DEPENDS)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+    # A component installs into the shared install prefix unless INSTALL_PREFIX
+    # overrides it with a subtree (e.g. .../Storage).  CMAKE_PREFIX_PATH stays
+    # the shared prefix, so the component still *finds* the exported
+    # Emu68Common / GIC400 packages there.  This lets the SANA-II genet variant
+    # land its DEVS/Networks/genet.device under Storage without colliding with
+    # the netdev variant's genet.device of the same filename.
+    set(_install_prefix "${CMAKE_INSTALL_PREFIX}")
+    if(STACK_INSTALL_PREFIX)
+        set(_install_prefix "${STACK_INSTALL_PREFIX}")
+    endif()
+
     # Debug args only apply to debug-emitting components (those that consume
-    # emu68-common's debug.h): the stack-wide backend, plus this component's
-    # EMU68_DEBUG_HIGH boolean derived from the stack-wide component list.
+    # emu68-common's debug.h): the stack-wide sink, plus this component's own
+    # rung resolved from the baseline and the override lists.
     # devicetree.resource/mailbox.resource get neither — passing them would trip
     # CMake's "unused variable" warning.
     set(_debug_args "")
     if(target IN_LIST EMU68_DEBUG_COMPONENTS)
-        set(_debug_high OFF)
-        if(EMU68_DEBUG_HIGH STREQUAL "ALL" OR target IN_LIST EMU68_DEBUG_HIGH)
-            set(_debug_high ON)
-        endif()
+        emu68_resolve_tier(_tier ${target})
         set(_debug_args
             -DEMU68_DEBUG_BACKEND:STRING=${EMU68_DEBUG_BACKEND}
-            -DEMU68_DEBUG_HIGH:BOOL=${_debug_high})
+            -DEMU68_TIER:STRING=${_tier})
     endif()
 
     # Cache-ops LVO-fallback flag only applies to components whose sources
@@ -132,11 +231,12 @@ function(add_stack_project target source_dir)
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
-        INSTALL_DIR "${CMAKE_INSTALL_PREFIX}"
+        INSTALL_DIR "${_install_prefix}"
         CMAKE_ARGS
             -DCMAKE_TOOLCHAIN_FILE:FILEPATH=${EMU68_DRIVER_STACK_TOOLCHAIN_FILE}
-            -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX}
+            -DCMAKE_INSTALL_PREFIX:PATH=${_install_prefix}
             -DCMAKE_PREFIX_PATH:PATH=${CMAKE_INSTALL_PREFIX}
+            ${EMU68_TOOLCHAIN_ARGS}
             ${_debug_args}
             ${_cache_ops_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
@@ -161,8 +261,19 @@ add_stack_project(mailbox.resource "${MAILBOX_RESOURCE_SOURCE_DIR}" DEPENDS devi
 add_stack_project(emu68-common "${EMU68_COMMON_SOURCE_DIR}" DEPENDS devicetree.resource mailbox.resource)
 add_stack_project(emu68-gic400-library "${EMU68_GIC400_SOURCE_DIR}" DEPENDS devicetree.resource emu68-common)
 add_stack_project(emu68-pcie-library "${EMU68_PCIE_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
-add_stack_project(emu68-xhci-driver "${EMU68_XHCI_SOURCE_DIR}" DEPENDS emu68-pcie-library)
-add_stack_project(emu68-genet-driver "${EMU68_GENET_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
+add_stack_project(emu68-xhci-driver-context "${EMU68_XHCI_CONTEXT_SOURCE_DIR}" DEPENDS emu68-pcie-library)
+# Legacy (5.x) xhci variant for classic Poseidon 4.x: installs to a Storage/ subtree
+# so its xhci.device does not collide with the context variant's.
+add_stack_project(emu68-xhci-driver-legacy "${EMU68_XHCI_LEGACY_SOURCE_DIR}"
+    INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/Storage"
+    DEPENDS emu68-pcie-library)
+add_stack_project(lwip-amiga "${LWIP_AMIGA_SOURCE_DIR}" DEPENDS emu68-common)
+add_stack_project(emu68-genet-driver-netdev "${EMU68_GENET_NETDEV_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library lwip-amiga)
+# SANA-II (3.x) genet variant: installs to a Storage/ subtree so its genet.device
+# does not collide with the netdev variant's, and does not depend on lwip-amiga.
+add_stack_project(emu68-genet-driver-sana2 "${EMU68_GENET_SANA2_SOURCE_DIR}"
+    INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/Storage"
+    DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
 
 get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
@@ -194,9 +305,21 @@ emu68_read_version(COMMON_VERSION  "${EMU68_COMMON_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GIC400_VERSION  "${EMU68_GIC400_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(BCMPCIE_VERSION "${EMU68_PCIE_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(OPENPCI_VERSION "${EMU68_PCIE_SOURCE_DIR}/openpci.library/CMakeLists.txt")
-emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_SOURCE_DIR}/CMakeLists.txt")
-emu68_read_version(GENET_VERSION   "${EMU68_GENET_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_CONTEXT_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(XHCI_LEGACY_VERSION "${EMU68_XHCI_LEGACY_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(GENET_VERSION   "${EMU68_GENET_NETDEV_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(GENET_SANA2_VERSION "${EMU68_GENET_SANA2_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(LWIP_VERSION    "${LWIP_AMIGA_SOURCE_DIR}/CMakeLists.txt")
+
+# lwip-amiga's release version is LWIP_VERSION; the shipped bsdsocket.library keeps ABI
+# major 4 (the AmiTCP/Roadshow contract) with its revision derived from that release
+# version (mirrors src/CMakeLists.txt). This is what 'version bsdsocket.library' reports.
+string(REPLACE "." ";" _lwip_ver_parts "${LWIP_VERSION}")
+list(GET _lwip_ver_parts 0 _lwip_ver_major)
+list(GET _lwip_ver_parts 1 _lwip_ver_minor)
+math(EXPR _bsdsocket_rev "${_lwip_ver_major} * 100 + ${_lwip_ver_minor}")
+set(BSDSOCKET_VERSION "4.${_bsdsocket_rev}")
 
 # Components whose README + LICENSE + release notes are bundled into the archive
 # under Documentation/<name>/, and listed in the generated root 'Licenses' file.
@@ -206,9 +329,12 @@ set(EMU68_DOC_COMPONENTS
     "emu68-common|${EMU68_COMMON_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|COMMON_VERSION"
     "emu68-gic400-library|${EMU68_GIC400_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|GIC400_VERSION"
     "emu68-pcie-library|${EMU68_PCIE_SOURCE_DIR}|GPL-2.0 (bcmpcie/openpci/lspci)|BCMPCIE_VERSION"
-    "emu68-xhci-driver|${EMU68_XHCI_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
-    "emu68-genet-driver|${EMU68_GENET_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
-    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION")
+    "emu68-xhci-driver-context|${EMU68_XHCI_CONTEXT_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
+    "emu68-xhci-driver-legacy|${EMU68_XHCI_LEGACY_SOURCE_DIR}|GPL-2.0|XHCI_LEGACY_VERSION"
+    "emu68-genet-driver-netdev|${EMU68_GENET_NETDEV_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
+    "emu68-genet-driver-sana2|${EMU68_GENET_SANA2_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_SANA2_VERSION"
+    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION"
+    "lwip-amiga|${LWIP_AMIGA_SOURCE_DIR}|BSD-3-Clause|LWIP_VERSION")
 
 # Describe the debug backend for the generated ReadMe so each archive is
 # self-describing about which build variant it is.
@@ -223,15 +349,49 @@ else()
     set(DEBUG_BACKEND_DESCRIPTION
         "Debug build (${EMU68_DEBUG_BACKEND} backend) - driver debug output is routed\n  through the Emu68/PiStorm debug console.")
 endif()
+# A non-default tier changes what that sink carries, so name it too.
+if(NOT EMU68_DEBUG_BACKEND STREQUAL "off" AND NOT EMU68_TIER STREQUAL "debug")
+    string(APPEND DEBUG_BACKEND_DESCRIPTION "\n  Debug tier: ${EMU68_TIER}.")
+endif()
 
-# Suffix the package name by backend so a release can ship multiple variants
-# side by side.  'off' is the production download and carries no suffix.
-if(EMU68_DEBUG_BACKEND STREQUAL "off")
-    set(PACKAGE_SUFFIX "")
-elseif(EMU68_DEBUG_BACKEND STREQUAL "serial")
-    set(PACKAGE_SUFFIX "-serial")
+# Describe the cache-op flavor the same way — each archive must say which Emu68
+# it runs on, because picking the wrong one is not a cosmetic mistake.
+# RANGEOPS_BUILD (0/1) lets the generated Install script know its own flavor.
+if(EMU68_FORCE_LVO_CACHE_OPS)
+    set(RANGEOPS_BUILD 0)
+    set(CACHE_OPS_DESCRIPTION
+        "Standard build - runs on any Emu68 from 1.1 alpha.1 on, but is much\n  slower on an Emu68 without the dcache extensions (see below).")
+    set(CACHE_OPS_FIRMWARE_REQ "Emu68 1.1 alpha.1 or newer\n    https://github.com/michalsc/Emu68")
 else()
-    set(PACKAGE_SUFFIX "-${EMU68_DEBUG_BACKEND}")
+    set(RANGEOPS_BUILD 1)
+    set(CACHE_OPS_DESCRIPTION
+        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions, which are not part of official Emu68 - a\n  custom build is needed.  On any other firmware xhci.device (6.x),\n  genet.device (4.x) and nvme.device notice this at boot and refuse\n  to load rather than crash (the -serial build logs why); use the\n  standard archive there.")
+    set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (a custom build - not official Emu68)\n    https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops")
+endif()
+
+# Suffix the package name by cache-op flavor and backend so a release can ship
+# multiple variants side by side.  The standard (LVO) flavor is the
+# stock-firmware-safe download and keeps the historical unsuffixed names; the
+# rangeops flavor (the CMake default) needs the dcache extensions and is marked so
+# it can never be mistaken for it.  'off' is the production backend and adds no
+# token (and no tier can change what it contains).  Anything that is not the
+# plain debug build says so, so a profiling or trace archive is never mistaken
+# for it: the baseline tier when it is not the default, and "-mixed" when
+# per-component overrides are in play (which components those are is a
+# developer-local choice, not a name).
+if(EMU68_FORCE_LVO_CACHE_OPS)
+    set(PACKAGE_SUFFIX "")
+else()
+    set(PACKAGE_SUFFIX "-rangeops")
+endif()
+if(NOT EMU68_DEBUG_BACKEND STREQUAL "off")
+    string(APPEND PACKAGE_SUFFIX "-${EMU68_DEBUG_BACKEND}")
+    if(NOT EMU68_TIER STREQUAL "debug")
+        string(APPEND PACKAGE_SUFFIX "-${EMU68_TIER}")
+    endif()
+    if(NOT _seen_components STREQUAL "" OR NOT _all_list STREQUAL "")
+        string(APPEND PACKAGE_SUFFIX "-mixed")
+    endif()
 endif()
 
 set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}${PACKAGE_SUFFIX}")
@@ -267,12 +427,43 @@ configure_file(
 file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
 "emu68 Driver Stack ${PACKAGE_VERSION} - component versions:
 
-  gic400.library    ${GIC400_VERSION}
-  bcmpcie.library   ${BCMPCIE_VERSION}
-  xhci.device       ${XHCI_VERSION}
-  genet.device      ${GENET_VERSION}
-  nvme.device       ${NVME_VERSION}
-  openpci.library   ${OPENPCI_VERSION}
+  gic400.library         ${GIC400_VERSION}
+  bcmpcie.library        ${BCMPCIE_VERSION}
+  xhci.device (context)  ${XHCI_VERSION}
+  xhci.device (legacy)   ${XHCI_LEGACY_VERSION}
+  genet.device (netdev)  ${GENET_VERSION}
+  genet.device (SANA-II) ${GENET_SANA2_VERSION}
+  nvme.device            ${NVME_VERSION}
+  openpci.library        ${OPENPCI_VERSION}
+  bsdsocket.library      ${BSDSOCKET_VERSION}
+
+Archive variants:
+
+  emu68-drivers-${PACKAGE_VERSION}.lha                  standard, debug output off
+  emu68-drivers-${PACKAGE_VERSION}-serial.lha           standard, debug output on serial
+  emu68-drivers-${PACKAGE_VERSION}-rangeops.lha         rangeops, debug output off
+  emu68-drivers-${PACKAGE_VERSION}-rangeops-serial.lha  rangeops, debug output on serial
+
+Which one to take:
+
+  Emu68            Poseidon  Archive             Ethernet     USB
+  ---------------  --------  ------------------  -----------  ------
+  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x  5.x
+  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x  6.x
+  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x   5.x
+  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x   6.x
+
+The standard archives run on any Emu68 from 1.1 alpha.1 on.  The -rangeops
+archives hold the same drivers built to use the dcache extensions and are
+considerably faster, but those extensions are not part of official Emu68 -
+they need a custom Emu68 build:
+
+  https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
+
+On any other firmware the -rangeops xhci/genet/nvme drivers refuse to load
+rather than crash, so use the standard archives there.  Without the extensions
+the bundled TCP/IP stack is slower than the SANA-II driver with Roadshow,
+AmiTCP or Miami - which is why the standard rows above pick SANA-II.
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component
@@ -289,7 +480,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device       -> emu68-xhci-driver\n  genet.device      -> emu68-genet-driver\n  genet-stats       -> emu68-genet-driver\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n\nemu68-common is a support library linked into the above; it ships no binary.\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -327,13 +518,25 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
+    # Config templates (ENVARC/netstack.prefs.default) — the Install script copies
+    # them to ENVARC: only when the user has no existing prefs.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/ENVARC" "${PACKAGE_STAGE}/ENVARC"
+    # SANA-II genet variant (+ genet-stats) installs under Storage/ — present in the
+    # archive but not installed; the installer copies genet.device to DEVS:Networks/
+    # only if the user picks the SANA-II line.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/Storage" "${PACKAGE_STAGE}/Storage"
     # Public SDK headers for the shipped libraries (nvme, gic400, bcmpcie/openpci),
     # under Developer/include/.  proto/clib/inline/pragmas hold only these libs'
     # headers (devicetree/mailbox protos live under install/Developer/, emu68-common
     # headers under install/include/ root) -> copy those four wholesale.  devices/
     # and libraries/ are enumerated to ship only the curated set: devices/nvme.h
-    # (not nvme_defs.h) and the bcmpcie/gic library headers minus pci_constants.h /
-    # pci_ids.h -- which keeps emu68-common out entirely (nothing pulls in types.h).
+    # (not nvme_defs.h), devices/netdev.h (the NIC driver ABI -- a third party can
+    # write a netdev driver or stack against it; BSD-3-Clause, and it includes
+    # nothing but exec/types.h) and the bcmpcie/gic library headers minus
+    # pci_constants.h / pci_ids.h -- which keeps emu68-common out entirely
+    # (nothing pulls in types.h).
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/include/proto"   "${PACKAGE_STAGE}/Developer/include/proto"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -345,6 +548,7 @@ add_custom_target(package
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/devices"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_INSTALL_PREFIX}/include/devices/nvme.h"
+        "${CMAKE_INSTALL_PREFIX}/include/devices/netdev.h"
         "${PACKAGE_STAGE}/Developer/include/devices/"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/libraries"
     COMMAND ${CMAKE_COMMAND} -E copy
@@ -369,12 +573,12 @@ add_custom_target(package
         "${CMAKE_CURRENT_SOURCE_DIR}/RELEASE-NOTES.md" "${PACKAGE_STAGE}/RELEASE-NOTES.md"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_BINARY_DIR}/installer/Licenses" "${PACKAGE_STAGE}/Licenses"
-    # Create the LHA archive.  chdir into the staging dir and add its contents (".")
-    # so the tree is flattened: LIBS/, DEVS/, Developer/, Install, ... sit at the
-    # archive root rather than under an emu68-drivers-<ver>/ wrapper directory.
+    # Create the LHA archive.  Add the staging dir's entries by name (shell glob)
+    # so the tree is flattened — LIBS/, DEVS/, Developer/, Install, ... sit at the
+    # archive root rather than under an emu68-drivers-<ver>/ wrapper directory —
+    # and no awkward "." entry ends up in the archive (which `lha a ... .` creates).
     COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_ARCHIVE}"
-    COMMAND ${CMAKE_COMMAND} -E chdir "${PACKAGE_STAGE}"
-        ${LHA_EXECUTABLE} a "${PACKAGE_ARCHIVE}" "."
+    COMMAND sh -c "cd '${PACKAGE_STAGE}' && '${LHA_EXECUTABLE}' a '${PACKAGE_ARCHIVE}' *"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     COMMENT "Creating ${PACKAGE_NAME}.lha"
     VERBATIM

@@ -6,11 +6,26 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: ["off", "serial"]
+        # lvo: cache ops through the exec LVO, runs on any Emu68 from 1.1 alpha.1 on —
+        # ships as the unsuffixed archives. rangeops: inline LINE-F range
+        # opcodes, runtime-gated on the /emu68 dcache-range-ops capability
+        # — ships as the -rangeops archives.
+        flavor: ["lvo", "rangeops"]
+        include:
+          - flavor: lvo
+            force_lvo: "ON"
+          - flavor: rangeops
+            force_lvo: "OFF"
 
     steps:
       - name: Checkout (with submodules)
@@ -18,30 +33,61 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build and package - off (production) backend
+      - name: Build and package ${{ matrix.flavor }} / ${{ matrix.backend }}
         run: ./scripts/docker-build.sh --target package
         env:
-          EMU68_BUILD_DIR: build-off
-          EMU68_INSTALL_DIR: install-off
-          # See build.yml: released Emu68 doesn't carry the private opcode
-          # that cache_ops.h's inline fast path needs; force the LVO route.
-          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=off -DEMU68_FORCE_LVO_CACHE_OPS=ON"
+          EMU68_BUILD_DIR: build-${{ matrix.flavor }}-${{ matrix.backend }}
+          EMU68_INSTALL_DIR: install-${{ matrix.flavor }}-${{ matrix.backend }}
+          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=${{ matrix.backend }} -DEMU68_FORCE_LVO_CACHE_OPS=${{ matrix.force_lvo }}"
 
-      - name: Build and package - serial (debug) backend
-        run: ./scripts/docker-build.sh --target package
-        env:
-          EMU68_BUILD_DIR: build-serial
-          EMU68_INSTALL_DIR: install-serial
-          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=serial -DEMU68_FORCE_LVO_CACHE_OPS=ON"
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.flavor }}-${{ matrix.backend }}
+          path: build-${{ matrix.flavor }}-${{ matrix.backend }}/package/emu68-drivers-*.lha
+          if-no-files-found: error
+
+      # The release body (component versions + archive variants) is identical
+      # across all legs; take it from one.
+      - name: Upload release body
+        if: matrix.flavor == 'lvo' && matrix.backend == 'off'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-body
+          path: build-lvo-off/installer/VERSIONS.txt
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: package-*
+          path: packages
+          merge-multiple: true
+
+      - name: Download release body
+        uses: actions/download-artifact@v7
+        with:
+          name: release-body
+          path: notes
+
+      # merge-multiple would silently keep one file if two legs ever produced
+      # the same archive name; four distinct names is the packaging contract.
+      - name: Check all four archives are distinct
+        run: |
+          ls -l packages
+          test "$(ls packages/*.lha | wc -l)" -eq 4
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           name: "emu68 Driver Stack ${{ github.ref_name }}"
-          files: |
-            build-off/package/emu68-drivers-*.lha
-            build-serial/package/emu68-drivers-*.lha
-          # Component versions (identical for both variants) prepended to the
-          # auto-generated commit/PR notes.
-          body_path: build-off/installer/VERSIONS.txt
+          files: packages/*.lha
+          body_path: notes/VERSIONS.txt
           generate_release_notes: true

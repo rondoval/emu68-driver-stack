@@ -15,6 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         backend: ["off", "serial"]
+        flavor: ["lvo", "rangeops"]
+        include:
+          - flavor: lvo
+            force_lvo: "ON"
+          - flavor: rangeops
+            force_lvo: "OFF"
 
     steps:
       - name: Checkout (with submodules)
@@ -22,22 +28,20 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build ${{ matrix.backend }} backend (in toolchain container)
+      - name: Build ${{ matrix.flavor }} / ${{ matrix.backend }} (in toolchain container)
         run: ./scripts/docker-build.sh
         env:
-          EMU68_INSTALL_DIR: install-${{ matrix.backend }}
-          # EMU68_FORCE_LVO_CACHE_OPS: CI builds against a released Emu68 that
-          # doesn't yet carry the private range opcode cache_ops.h's inline fast
-          # path needs, so route through the exec LVO instead. Local builds
-          # against a patched Emu68 leave this off to get the optimization.
-          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=${{ matrix.backend }} -DEMU68_FORCE_LVO_CACHE_OPS=ON"
+          EMU68_BUILD_DIR: build-${{ matrix.flavor }}-${{ matrix.backend }}
+          EMU68_INSTALL_DIR: install-${{ matrix.flavor }}-${{ matrix.backend }}
+          EMU68_CONFIGURE_ARGS: "-DEMU68_DEBUG_BACKEND=${{ matrix.backend }} -DEMU68_FORCE_LVO_CACHE_OPS=${{ matrix.force_lvo }}"
 
       - name: Upload runtime artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: emu68-drivers-${{ matrix.backend }}
+          name: emu68-drivers-${{ matrix.flavor }}-${{ matrix.backend }}
           path: |
-            install-${{ matrix.backend }}/LIBS
-            install-${{ matrix.backend }}/DEVS
-            install-${{ matrix.backend }}/C
+            install-${{ matrix.flavor }}-${{ matrix.backend }}/LIBS
+            install-${{ matrix.flavor }}-${{ matrix.backend }}/DEVS
+            install-${{ matrix.flavor }}-${{ matrix.backend }}/C
+            install-${{ matrix.flavor }}-${{ matrix.backend }}/Storage
           if-no-files-found: error

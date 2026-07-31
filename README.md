@@ -1,263 +1,132 @@
-# emu68-driver-stack
+# Emu68 Driver Stack
 
-Top-level superbuild for the Emu68 AmigaOS driver stack.
+AmigaOS drivers that let your Amiga use the hardware of the Raspberry Pi 4 or
+Compute Module 4 it is running on. If you have a PiStorm with Emu68, this
+package gives you USB, Gigabit Ethernet with a TCP/IP stack, and NVMe solid-state
+storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
 
-This project builds the full stack into one driver-stack prefix.  All component
-repositories are included as git submodules under `components/`.
+> **2.0.0 is a big release — treat it as beta.** Nearly everything in the
+> networking path is new: a TCP/IP stack, a new driver ABI, a rewritten Ethernet
+> driver, and a second USB driver line. Keep a bootable backup of your current
+> `LIBS:` and `DEVS:` before installing, and please report what breaks.
 
-## Components
+## What you get
 
-- `devicetree.resource`
-- `mailbox.resource`
-- `emu68-common`
-- `emu68-gic400-library`
-- `emu68-pcie-library`
-- `emu68-xhci-driver`
-- `emu68-genet-driver`
-- `emu68-nvme-driver`
+- **USB** — `xhci.device` drives the USB controllers on the Pi 4 / CM4. Each one
+  is a separate unit that has to be added to your USB stack on its own; the
+  driver's own documentation lists which units your board has. Needs a Poseidon
+  USB stack, which is distributed separately.
+- **Ethernet** — `genet.device` drives the Pi 4's built-in gigabit port.
+- **TCP/IP** — `bsdsocket.library`, a modern TCP/IP stack (lwip-amiga) that
+  configures itself over DHCP. Comes with the `netinfo`, `netdev-stats` and
+  `mdns` tools.
+- **Storage** — `nvme.device` drives an NVMe SSD attached to the PCIe slot, with
+  the `nvmeinfo` and `nvmeadm` tools for health and SMART data.
+- **Supporting libraries** — `gic400.library` and `bcmpcie.library`, which the
+  drivers need, plus optional `openpci.library` and the `lspci` tool.
 
-## Output layout
+## Requirements
 
-| Path | Contents |
-|---|---|
-| `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library` |
-| `install/DEVS/` | `nvme.device` |
-| `install/DEVS/USBHardware/` | `xhci.device` |
-| `install/DEVS/Networks/` | `genet.device` |
-| `install/C/` | `lspci`, `nvmeadm`, `nvmeinfo`, `genet-stats` |
-| `install/Developer/` | Public headers and SFD files |
-| `install/include/`, `install/lib/` | Build-time headers and static libraries |
+- A Raspberry Pi 4 or CM4 running [Emu68](https://github.com/michalsc/Emu68)
+  **1.1 alpha.1 or newer**
+- AmigaOS 3.x
+- For USB: a Poseidon USB stack (not included — see *What to download and
+  install* below)
+- For the SANA-II Ethernet option: a TCP/IP stack such as Roadshow, AmiTCP or Miami
 
-## Assumptions
+## What to download and install
 
-- Bebbo's AmigaOS cross-toolchain is installed under `/opt/m68k-amigaos`
-  — or use the Docker build below, which needs no local toolchain.
+**The one thing that decides everything: does your Emu68 have the dcache
+extensions?**
 
-## Building
+They are not part of official Emu68 — they are a separate change to its JIT that
+has not been merged upstream, so having them means running
+[a custom Emu68 build](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops).
+Without them the drivers still work, but the cache housekeeping around every
+transfer has to be done the slow way — and the bundled TCP/IP stack, which is
+built around that housekeeping being cheap, ends up *slower* than the plain old
+SANA-II driver. So on official Emu68 there is no point installing the netdev
+Ethernet driver at all: take the standard archive and pair the SANA-II driver
+with Roadshow, AmiTCP or Miami. On
+[a custom build with the extensions](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops),
+take the `-rangeops` archive and the netdev driver with the bundled
+`bsdsocket.library`, which gets you close to gigabit line rate. USB is a
+separate, independent question: it depends only on which Poseidon you run.
 
-### Fresh clone
+Archives are on the [Releases](https://github.com/rondoval/emu68-driver-stack/releases)
+page. **Find your row.**
+
+| Your Emu68 | Your Poseidon | Download | Ethernet | USB |
+|---|---|---|---|---|
+| Official, 1.1 alpha.1 or newer | classic 4.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x + Roadshow / AmiTCP / Miami | `xhci.device` **5.x** |
+| Official, 1.1 alpha.1 or newer | for AmigaOS 6.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x + Roadshow / AmiTCP / Miami | `xhci.device` **6.x** |
+| Custom build with the dcache extensions | classic 4.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x + the bundled `bsdsocket.library` | `xhci.device` **5.x** |
+| Custom build with the dcache extensions | for AmigaOS 6.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x + the bundled `bsdsocket.library` | `xhci.device` **6.x** |
+
+**Choosing netdev turns off every other network interface you have.** The
+bundled `bsdsocket.library` is not a SANA-II stack: it drives network hardware
+over the new *netdev* interface, and `genet.device` 4.x is the only driver in
+existence that speaks it. Anything else you connect through — a Zorro or PCMCIA
+Ethernet card, a USB Ethernet adapter, a PPP or SLIP dial-up link — has a
+SANA-II driver only, and will stop working once the bundled stack replaces your
+`bsdsocket.library`. If you need any of them, take the SANA-II row.
+
+The bundled `bsdsocket.library` replaces yours (the old one is kept as
+`bsdsocket.library.orig`); the SANA-II driver leaves your TCP/IP stack alone.
+`xhci.device` 5.x also runs on Poseidon for AmigaOS 6.x, just without real USB
+3.0 or fast UAS storage — so it is the safe answer if you are unsure.
+
+The two `-serial` archives are the same drivers with serial-port diagnostics —
+take one only when chasing a problem. Installing a `-rangeops` archive on an
+Emu68 without the extensions is safe: the installer checks, says so, and stops
+without changing anything.
+
+Where the advice comes from — measured TCP throughput, netdev `genet.device` +
+the bundled stack, on a gigabit LAN:
+
+| Archive | Emu68 | Download | Upload |
+|---|---|---|---|
+| standard | official build | 104 Mb/s | 79 Mb/s |
+| standard | custom build with the extensions | 698 Mb/s | 477 Mb/s |
+| `-rangeops` | custom build with the extensions | near line rate | near line rate |
+
+Why the extensions make that much difference is explained in
+[DEVELOPING.md](DEVELOPING.md#the-dcache-extensions).
+
+## Installing
+
+1. Unpack the archive on your Amiga.
+2. Run the `Install` script (double-click it, or run it from a Shell).
+3. Answer the questions — the table above tells you which to pick — and reboot.
+
+The installer only copies what you select, never downgrades a newer file without
+asking, and pulls in the supporting libraries automatically, so you cannot end up
+with a driver whose library is missing.
+
+## Documentation and licences
+
+The archive contains a `ReadMe` covering every component and the post-install
+steps, a `Licenses` summary, and a `Documentation` drawer with each component's
+own documentation. [`RELEASE-NOTES.md`](RELEASE-NOTES.md) lists what changed in
+each version.
+
+Each component is covered by its own licence: GPL-2.0, MPL-2.0/GPL-2.0+, and
+BSD-3-Clause for `lwip-amiga` — the TCP/IP stack, `bsdsocket.library` and the
+networking tools. The per-file SPDX headers in the sources are authoritative,
+and the `Licenses` file in the archive maps every shipped binary to its licence.
+
+## For developers
+
+This repository is a CMake superbuild; every component is a git submodule under
+`components/`.
 
 ```sh
 git clone --recurse-submodules https://github.com/rondoval/emu68-driver-stack.git
 cd emu68-driver-stack
-cmake -S . -B build
-cmake --build build
+./scripts/docker-build.sh                   # build in the toolchain container
+./scripts/docker-build.sh --target package  # ...and make the .lha
 ```
 
-### Existing clone without submodules
-
-```sh
-git submodule update --init --recursive
-cmake -S . -B build
-cmake --build build
-```
-
-### Building with Docker (no local toolchain)
-
-`scripts/docker-build.sh` runs the build inside the same cross-toolchain image CI
-uses (`amigadev/crosstools:m68k-amigaos`), so no local `/opt/m68k-amigaos` install
-is required. It also carries the `lha` archiver used by the `package` target.
-
-```sh
-git submodule update --init --recursive   # submodules are read from the host
-./scripts/docker-build.sh                  # configure + build the whole stack
-./scripts/docker-build.sh --target package # ...and create the .lha release archive
-```
-
-Build outputs land in `install/` and `build/` on the host, owned by your user (the
-wrapper runs the container as your uid/gid). Pass extra configure-time options via
-`EMU68_CONFIGURE_ARGS`, e.g. `EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial"`;
-any positional arguments are forwarded to `cmake --build build`.
-
-### Developer quick loop (build + upload to a live Amiga)
-
-`./build.sh` wraps the whole edit-build-test loop: it builds (and optionally
-packages) via `scripts/docker-build.sh`, then uploads the freshly built binaries to
-a running Amiga over Cloanto Amiga Explorer (`AE.exe`, driven from WSL). With no
-flags it does build + upload.
-
-```sh
-./build.sh                       # build, then upload to the Amiga (the usual loop)
-./build.sh --build               # build only
-BACKEND=off ./build.sh --package # release build + build/package/emu68-drivers-<ver>.lha
-./build.sh --upload --dry-run    # preview the LIBS:/DEVS:/C: copy plan, copy nothing
-```
-
-Env knobs: `BACKEND=<pistorm|serial|off>`, `DEBUG_HIGH=<components|ALL>`,
-`AE=<path to AE.exe>`, `BUILD_DIR`, `INSTALL_DIR`, `BUILD_IMAGE`; run `./build.sh
---help` for the full list. The upload copies the runtime trees only
-(`install/{LIBS,DEVS,C}`) — for a first-time/full install use the `.lha` + Installer.
-
-## Local development — working on an individual component
-
-Override any component's source directory to point to your own checkout:
-
-```sh
-cmake -S . -B build -D EMU68_XHCI_SOURCE_DIR=/home/user/emu68-xhci-driver
-cmake --build build
-```
-
-The override is cached in `build/CMakeCache.txt` and applies to all subsequent
-builds until cleared.  The submodule under `components/` is ignored for any
-overridden component.  All other overridable variables follow the same
-`<COMPONENT>_SOURCE_DIR` naming pattern (see `CMakeLists.txt`).
-
-## Debug output backend
-
-All components share one debug-output backend, selected at configure time with
-the `EMU68_DEBUG_BACKEND` cache variable (default `pistorm`) and propagated to
-every component so the whole image stays consistent:
-
-| Value     | Debug output                                                          | ROM-able |
-|-----------|-----------------------------------------------------------------------|----------|
-| `pistorm` | `RawDoFmt` → magic address `0xdeadbeef`, trapped & printed by Emu68    | yes      |
-| `serial`  | `debug.lib` `KPutChar` → Amiga serial port @ 9600 baud                | no¹      |
-| `off`     | debug output compiled out                                             | yes      |
-
-```sh
-cmake -S . -B build -DEMU68_DEBUG_BACKEND=serial   # pistorm (default) | serial | off
-cmake --build build
-```
-
-Switching the value reconfigures and rebuilds the affected components.  With
-`serial`, debug output goes to the Amiga serial port (9600 baud) on real
-hardware, or can be captured/redirected on a host with the Sashimi tool; use
-`off` for the smallest binaries.
-
-¹ The `serial` backend links `debug.lib`, which carries a 4-byte writable
-`_SysBase`, so those binaries are intentionally **not** ROM-able and skip the ROM
-check.  `pistorm` and `off` remain ROM-able.
-
-### Verbose ("high") logging
-
-The backend above selects *where* debug output goes; `EMU68_DEBUG_HIGH` selects
-*how much*.  It enables the verbose `KprintfH` / `DEBUG_HIGH` tier (hot-path and
-per-operation traces) on top of the normal `Kprintf` output, **per component**:
-
-```sh
-# verbose logging in just the PCIe library
-cmake -S . -B build -DEMU68_DEBUG_HIGH=emu68-pcie-library
-
-# verbose logging in several components (CMake list — semicolon-separated)
-cmake -S . -B build "-DEMU68_DEBUG_HIGH=emu68-pcie-library;emu68-nvme-driver"
-
-# verbose logging everywhere
-cmake -S . -B build -DEMU68_DEBUG_HIGH=ALL
-```
-
-- Default is empty — verbose logging is **off** in every component.
-- Value is a list of component target names, or `ALL` for every debug-emitting
-  component.  Valid names: `emu68-common`, `emu68-gic400-library`,
-  `emu68-pcie-library`, `emu68-xhci-driver`, `emu68-genet-driver`,
-  `emu68-nvme-driver`.  An unknown name fails at configure time.
-- Independent of the backend, but requires `EMU68_DEBUG_BACKEND != off` to emit
-  anything — with the `off` backend there is no debug output to make verbose.
-
-Scope it to the component you're debugging: `ALL` is noisy enough to swamp the
-debug console (and slow the hot paths) across the whole stack.
-
-## Cache-op routing
-
-`emu68-common`'s `cache_ops.h` emits its `cache_pre_dma()` / `cache_post_dma()`
-range operations inline, through a private LINE-F opcode that only a patched Emu68
-decodes.  `EMU68_FORCE_LVO_CACHE_OPS` routes them back through exec's
-`CachePreDMA` / `CachePostDMA` instead, for an Emu68 that doesn't carry the opcode:
-
-```sh
-cmake -S . -B build -DEMU68_FORCE_LVO_CACHE_OPS=ON
-```
-
-- Default is `OFF` — the inline fast path, which assumes a patched Emu68 that
-  decodes the range opcode.  An Emu68 lacking it would Line-F trap on the
-  opcode, so build against one with this `ON`.
-- Forwarded only to the components that include `cache_ops.h` —
-  `emu68-xhci-driver`, `emu68-genet-driver` and `emu68-nvme-driver`.  It has no
-  effect on the rest of the stack.
-- CI builds against a released Emu68 and so sets it `ON`; shipped binaries keep
-  the LVO path.
-
-## Versioning
-
-Component submodule pointers in this repository always track a release tag of
-each component.  To update a component to a new release:
-
-```sh
-git -C components/emu68-xhci-driver checkout v4.1.0
-git add components/emu68-xhci-driver
-git commit -m "Bump emu68-xhci-driver to v4.1.0"
-```
-
-## Creating a release package
-
-```sh
-cmake --build build --target package
-# or, without a local toolchain:
-./scripts/docker-build.sh --target package
-```
-
-This produces `build/package/emu68-drivers-<version>.lha` containing the runtime
-binaries (`LIBS/`, `DEVS/`, `C/`) alongside the Installer script, so the installer
-can be run directly from the unpacked archive. It also bundles, for licence
-completeness and self-documentation:
-
-- `Documentation/<component>/` — each component's `README.md`, `LICENSE`, and
-  release notes;
-- `Licenses` — a generated summary mapping every component (and shipped binary) to
-  its licence and to its `Documentation/<component>/LICENSE`;
-- `RELEASE-NOTES.md` — the top-level changelog.
-
-The package version is taken from the project version in `CMakeLists.txt` and
-stamped into the installer's `Install` / `ReadMe` (generated from the `*.in`
-templates), so there is a single version source.
-
-Packaging needs the `lha` archiver. It ships in the toolchain image used by
-`scripts/docker-build.sh`; for a native build, install an `lha` archiver yourself.
-
-## Releasing the stack
-
-Components and the stack version each as follows. **Every** pull request — in a
-component repo or this one — is gated by CI on three checks: the CMake
-`project(... VERSION ...)` is bumped, `RELEASE-NOTES.md` is updated, and the code
-compiles cleanly.
-
-**Per component repo** (only those that changed):
-
-1. Update the component's single `RELEASE-NOTES.md` (newest entry on top) and bump
-   its `project(... VERSION ...)`.
-2. Open a PR. CI enforces the version bump, the release-notes change, and a clean
-   build of the component *inside the stack* (it builds the stack with this
-   component's source overridden — see `.github/workflows/component-versioning.yml`).
-3. Merge to `main` → CI auto-creates the `v<version>` git tag. Component repos do
-   **not** publish GitHub Releases; the tag is the stable point this repo's
-   submodule pointer tracks.
-
-**This (stack) repo — single release PR:**
-
-1. Bump each changed submodule pointer to the new component tag (see
-   [Versioning](#versioning)).
-2. Bump the stack version in [`CMakeLists.txt`](CMakeLists.txt) (`project(emu68_driver_stack VERSION X.Y.Z)`).
-3. Update [`RELEASE-NOTES.md`](RELEASE-NOTES.md): refresh the component-versions table and headlines,
-   linking each component's `RELEASE-NOTES.md`. Append the new stack version on top.
-4. Update `installer/ReadMe.in` / `installer/Install.in` only if components were
-   added or removed.
-5. Open the PR (same three gates apply via `build.yml` + `release-checks.yml`),
-   then merge.
-6. **Tag the release manually** and push it:
-   ```sh
-   git tag v<stack-version> && git push origin v<stack-version>
-   ```
-   The tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the `off`
-   (production) and `serial` (debug) variants, runs the `package` target, and
-   publishes the GitHub Release with both `.lha` files (component versions from
-   `VERSIONS.txt` are prepended to the notes).
-
-No CI? Build each variant locally with `./scripts/docker-build.sh --target package`
-(`EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=off"` / `=serial`) and attach the
-archives to the release by hand.
-
-## Custom install prefix
-
-```sh
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/path/to/prefix
-cmake --build build
-```
+[DEVELOPING.md](DEVELOPING.md) covers the toolchain, the build options, the
+debug backend and tiers, the cache-op flavors, packaging and the release
+process.
