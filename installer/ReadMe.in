@@ -1,5 +1,5 @@
 emu68 Driver Stack @PACKAGE_VERSION@
-====================================
+========================
 AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
 
 *** @PACKAGE_VERSION@ is a big release - treat it as beta. Nearly everything
