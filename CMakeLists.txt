@@ -82,6 +82,7 @@ option(EMU68_FORCE_LVO_CACHE_OPS
 set(EMU68_CACHE_OPS_COMPONENTS
     emu68-xhci-driver-context
     emu68-genet-driver-netdev
+    emu68-genet-driver-sana2
     emu68-nvme-driver)
 
 # The tier-override lists, in ascending rung order.  A component may appear in at
@@ -365,7 +366,7 @@ if(EMU68_FORCE_LVO_CACHE_OPS)
 else()
     set(RANGEOPS_BUILD 1)
     set(CACHE_OPS_DESCRIPTION
-        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions, which are not part of official Emu68 - a\n  custom build is needed.  On any other firmware xhci.device (6.x),\n  genet.device (4.x) and nvme.device notice this at boot and refuse\n  to load rather than crash (the -serial build logs why); use the\n  standard archive there.")
+        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions, which are not part of official Emu68 - a\n  custom build is needed.  On any other firmware xhci.device (6.x),\n  both genet.device builds (netdev 4.x and SANA-II 3.x) and\n  nvme.device notice this at boot and refuse to load rather than\n  crash (the -serial build logs why); use the standard archive\n  there.")
     set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (a custom build - not official Emu68)\n    https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops")
 endif()
 
@@ -480,7 +481,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, Arp -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -550,6 +551,12 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/include/devices/nvme.h"
         "${CMAKE_INSTALL_PREFIX}/include/devices/netdev.h"
         "${PACKAGE_STAGE}/Developer/include/devices/"
+    # lwip-amiga's SIOC*ARP IoctlSocket codes (supplements the NDK netinclude,
+    # which ships struct arpreq but no request codes)
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/net"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_INSTALL_PREFIX}/include/net/if_arp_ioctl.h"
+        "${PACKAGE_STAGE}/Developer/include/net/"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/libraries"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_INSTALL_PREFIX}/include/libraries/gic400.h"

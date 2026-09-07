@@ -443,6 +443,12 @@
         (set #need-c    (+ #need-c (getsize "C/netdev-stats")))
         (set #need-c    (+ #need-c (getsize "C/netinfo")))
         (set #need-c    (+ #need-c (getsize "C/mdns")))
+        (set #need-c    (+ #need-c (getsize "C/AddNetInterface")))
+        (set #need-c    (+ #need-c (getsize "C/RemoveNetInterface")))
+        (set #need-c    (+ #need-c (getsize "C/NetShutdown")))
+        (set #need-c    (+ #need-c (getsize "C/arp")))
+        (set #need-c    (+ #need-c (getsize "C/ping")))
+        (set #need-c    (+ #need-c (getsize "C/traceroute")))
     )
 )
 
@@ -518,8 +524,12 @@
 (complete 55)
 
 ; netdev line -> LIBS:bsdsocket.library (backed up, then force-replaced), its
-; tools, and the config template.  The template lands in ENVARC: only when no
-; netstack.prefs exists yet - a reinstall never clobbers a live configuration.
+; tools, and the configuration.  Config files land only when absent - a
+; reinstall never clobbers a live configuration: the stack-wide template in
+; ENVARC:netstack.prefs, the sample interface file in DEVS:NetInterfaces/
+; (Roadshow model: interfaces are added at boot by AddNetInterface), and
+; S:Network-Startup with the boot line, executed from a marker-guarded
+; User-Startup block (the startup command asks first).
 (if #net-netdev
     (
         (P_backup "LIBS:" "bsdsocket.library")
@@ -527,14 +537,52 @@
         (P_copyforce "C/netdev-stats" "C:")
         (P_copyforce "C/netinfo" "C:")
         (P_copyforce "C/mdns" "C:")
+        (P_copyforce "C/AddNetInterface" "C:")
+        (P_copyforce "C/RemoveNetInterface" "C:")
+        (P_copyforce "C/NetShutdown" "C:")
+        (P_copyforce "C/arp" "C:")
+        (P_copyforce "C/ping" "C:")
+        (P_copyforce "C/traceroute" "C:")
         (if (NOT (exists "ENVARC:netstack.prefs" (noreq)))
             (copyfiles
-                (prompt "Installing the default netstack.prefs (DHCP)...")
+                (prompt "Installing the default netstack.prefs...")
                 (help @copyfiles-help)
                 (source "ENVARC/netstack.prefs.default")
                 (dest "ENVARC:")
                 (newname "netstack.prefs")
             )
+        )
+        (if (NOT (exists "DEVS:NetInterfaces/genet" (noreq)))
+            (copyfiles
+                (prompt "Installing the interface file DEVS:NetInterfaces/genet (DHCP)...")
+                (help @copyfiles-help)
+                (source "Storage/NetInterfaces/genet")
+                (dest "DEVS:NetInterfaces")
+            )
+        )
+        (if (NOT (exists "S:Network-Startup" (noreq)))
+            (textfile
+                (prompt "Creating S:Network-Startup (adds the network interfaces at boot)...")
+                (help @copyfiles-help)
+                (dest "S:Network-Startup")
+                (append "; $VER: Network-Startup 1.0 (emu68 driver stack)\n")
+                (append "; Adds every interface configured in DEVS:NetInterfaces/.\n")
+                (append "FailAt 30\n")
+                (append "C:AddNetInterface DEVS:NetInterfaces/~(#?.info) QUIET\n")
+            )
+        )
+        (startup "emu68 network"
+            (prompt
+                (cat
+                    "The network interfaces are brought up at boot by\n"
+                    "S:Network-Startup.  Add these lines to S:User-Startup?\n\n"
+                    "If EXISTS S:Network-Startup\n"
+                    "  Execute S:Network-Startup\n"
+                    "EndIf"
+                )
+            )
+            (help @startup-help)
+            (command "If EXISTS S:Network-Startup\nExecute S:Network-Startup\nEndIf")
         )
     )
 )
@@ -613,8 +661,8 @@
 (if #net-netdev
     (set #done-msg
         (cat #done-msg
-            "* TCP/IP configures itself by DHCP; settings\n"
-            "  live in ENVARC:netstack.prefs\n"
+            "* TCP/IP: interfaces live in DEVS:NetInterfaces,\n"
+            "  added at boot by S:Network-Startup (DHCP)\n"
         )
     )
 )
