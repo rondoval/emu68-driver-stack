@@ -158,6 +158,18 @@ ping, traceroute (C:)
   a packet crosses on its way to a host (ping's RECORDROUTE option is not
   supported by this stack).
 
+NetLogViewer (C:, with icon)
+  Log viewer, installed with the netdev version: a Commodity
+  that captures every message bsdsocket.library and its clients log
+  (interface and link state, DHCP leases, errors, syslog() output) and shows
+  them in a window with time, origin and severity; the list can be saved to
+  a file. Shift-Alt-F8 (CX_POPKEY) shows the window, Exchange hides and
+  shows it, NetShutdown makes it exit. Start it before AddNetInterface to
+  see the whole bring-up, for example from S:Network-Startup with
+  "Run >NIL: C:NetLogViewer CX_POPUP NO". The icon carries the CX_POPKEY /
+  CX_PRIORITY / CX_POPUP tooltypes and DONOTWAIT, so a copy in WBStartup
+  works too.
+
 nvme.device @NVME_VERSION@ (DEVS:)
   Storage driver for a PCIe-attached NVMe SSD.
 

@@ -449,6 +449,8 @@
         (set #need-c    (+ #need-c (getsize "C/arp")))
         (set #need-c    (+ #need-c (getsize "C/ping")))
         (set #need-c    (+ #need-c (getsize "C/traceroute")))
+        (set #need-c    (+ #need-c (getsize "C/NetLogViewer")))
+        (set #need-c    (+ #need-c (getsize "C/NetLogViewer.info")))
     )
 )
 
@@ -543,6 +545,8 @@
         (P_copyforce "C/arp" "C:")
         (P_copyforce "C/ping" "C:")
         (P_copyforce "C/traceroute" "C:")
+        (P_copyforce "C/NetLogViewer" "C:")
+        (P_copyforce "C/NetLogViewer.info" "C:")
         (if (NOT (exists "ENVARC:netstack.prefs" (noreq)))
             (copyfiles
                 (prompt "Installing the default netstack.prefs...")
