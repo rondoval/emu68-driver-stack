@@ -46,11 +46,6 @@ reconfiguring on the host clobbers the container's cache. Always go through the
 wrapper. (A native build against a local Bebbo toolchain at
 `/opt/m68k-amigaos` does work, but only into its own separate build directory.)
 
-Every build ends with `scripts/check-regargs.py`, which fails the build if a
-function declaring `asm("aN")` parameters was emitted with the stack calling
-convention — gcc 16.1 does that silently when a prototype sees a parameter's
-struct as incomplete. `EMU68_SKIP_ABI_CHECK=1` skips it.
-
 ## Build options
 
 All are configure-time CMake cache variables, passed via `EMU68_CONFIGURE_ARGS`:
