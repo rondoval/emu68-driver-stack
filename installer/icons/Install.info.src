@@ -1,0 +1,3 @@
+TYPE        = PROJECT
+# The Installer script is a project whose tool is the Commodore Installer.
+DEFAULTTOOL = SYS:Utilities/Installer

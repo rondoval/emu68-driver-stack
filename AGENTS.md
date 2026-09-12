@@ -33,13 +33,6 @@ during a superbuild:
 CI (`.github/workflows/`) runs this exact wrapper, so a green local
 `docker-build.sh` matches CI.
 
-Every build ends with `scripts/check-regargs.py`, which fails the build if a
-function declaring `asm("aN")` parameters was emitted with the stack calling
-convention. gcc 16.1 does that **silently** when a prototype sees a parameter's
-struct as incomplete and the definition later sees it complete, so keep such a
-struct complete before any prototype that names it. `EMU68_SKIP_ABI_CHECK=1`
-skips the check.
-
 For the edit-build-test loop, `./build.sh` (repo root) wraps `docker-build.sh`
 and adds an upload to a live Amiga over `AE.exe`: no flags = build + upload;
 `--build`, `--package`, `--upload`, `--dry-run`; knobs `BACKEND=`, `FLAVOR=`,

@@ -5,10 +5,12 @@ Compute Module 4 it is running on. If you have a PiStorm with Emu68, this
 package gives you USB, Gigabit Ethernet with a TCP/IP stack, and NVMe solid-state
 storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
 
-> **2.0.0 is a big release — treat it as beta.** Nearly everything in the
-> networking path is new: a TCP/IP stack, a new driver ABI, a rewritten Ethernet
-> driver, and a second USB driver line. Keep a bootable backup of your current
-> `LIBS:` and `DEVS:` before installing, and please report what breaks.
+> **Upgrading from 2.0?** Two things can change how your machine comes up.
+> Network interfaces are no longer configured in `ENVARC:netstack.prefs` — each
+> one now has its own file in `DEVS:NetInterfaces/` — so a fixed address set up
+> under 2.0 comes back up on DHCP until you re-enter it there (the installer
+> warns you). And NVMe partition numbering can shift, because exFAT partitions
+> now mount too.
 
 ## What you get
 
@@ -16,10 +18,17 @@ storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
   is a separate unit that has to be added to your USB stack on its own; the
   driver's own documentation lists which units your board has. Needs a Poseidon
   USB stack, which is distributed separately.
-- **Ethernet** — `genet.device` drives the Pi 4's built-in gigabit port.
-- **TCP/IP** — `bsdsocket.library`, a modern TCP/IP stack (lwip-amiga) that
-  configures itself over DHCP. Comes with the `netinfo`, `netdev-stats` and
-  `mdns` tools.
+- **Ethernet** — `genet.device` drives the Pi 4's built-in gigabit port, in two
+  versions you choose between: the fast zero-copy `netdev` driver for the
+  bundled TCP/IP stack, or the classic SANA-II driver that any stack can use.
+- **TCP/IP** — lwip-amiga, a modern TCP/IP stack that configures itself over
+  DHCP. It provides the standard AmigaOS networking API, so it installs under
+  the usual name `bsdsocket.library`. It also drives classic Ethernet-type
+  SANA-II hardware — a Zorro or PCMCIA card, a USB Ethernet adapter — so it is
+  not tied to the Pi's own port; one interface at a time. Comes with `netinfo`,
+  `netdev-stats`, `mdns`, `ping`, `traceroute`, `arp`, the Roadshow-style
+  `AddNetInterface` / `RemoveNetInterface` / `NetShutdown` commands and the
+  `NetLogViewer` commodity.
 - **Storage** — `nvme.device` drives an NVMe SSD attached to the PCIe slot, with
   the `nvmeinfo` and `nvmeadm` tools for health and SMART data.
 - **Supporting libraries** — `gic400.library` and `bcmpcie.library`, which the
@@ -32,7 +41,9 @@ storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
 - AmigaOS 3.x
 - For USB: a Poseidon USB stack (not included — see *What to download and
   install* below)
-- For the SANA-II Ethernet option: a TCP/IP stack such as Roadshow, AmiTCP or Miami
+- For networking: either the bundled lwip-amiga stack or a third-party one such
+  as Roadshow, AmiTCP or Miami. The `netdev` `genet.device` needs lwip-amiga;
+  the SANA-II `genet.device` works with either
 
 ## What to download and install
 
@@ -50,29 +61,35 @@ Ethernet driver at all: take the standard archive and pair the SANA-II driver
 with Roadshow, AmiTCP or Miami. On
 [a custom build with the extensions](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops),
 take the `-rangeops` archive and the netdev driver with the bundled
-`bsdsocket.library`, which gets you close to gigabit line rate. USB is a
+lwip-amiga stack, which gets you close to gigabit line rate. USB is a
 separate, independent question: it depends only on which Poseidon you run.
 
 Archives are on the [Releases](https://github.com/rondoval/emu68-driver-stack/releases)
 page. **Find your row.**
 
-| Your Emu68 | Your Poseidon | Download | Ethernet | USB |
-|---|---|---|---|---|
-| Official, 1.1 alpha.1 or newer | classic 4.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x + Roadshow / AmiTCP / Miami | `xhci.device` **5.x** |
-| Official, 1.1 alpha.1 or newer | for AmigaOS 6.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x + Roadshow / AmiTCP / Miami | `xhci.device` **6.x** |
-| Custom build with the dcache extensions | classic 4.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x + the bundled `bsdsocket.library` | `xhci.device` **5.x** |
-| Custom build with the dcache extensions | for AmigaOS 6.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x + the bundled `bsdsocket.library` | `xhci.device` **6.x** |
+The installer asks for the Ethernet driver and the TCP/IP stack separately —
+they are independent choices, because the bundled stack drives SANA-II
+hardware too.
 
-**Choosing netdev turns off every other network interface you have.** The
-bundled `bsdsocket.library` is not a SANA-II stack: it drives network hardware
-over the new *netdev* interface, and `genet.device` 4.x is the only driver in
-existence that speaks it. Anything else you connect through — a Zorro or PCMCIA
-Ethernet card, a USB Ethernet adapter, a PPP or SLIP dial-up link — has a
-SANA-II driver only, and will stop working once the bundled stack replaces your
-`bsdsocket.library`. If you need any of them, take the SANA-II row.
+| Your Emu68 | Your Poseidon | Download | Ethernet driver | TCP/IP | USB |
+|---|---|---|---|---|---|
+| Official, 1.1 alpha.1 or newer | classic 4.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x | Roadshow / AmiTCP / Miami, or the bundled stack | `xhci.device` **5.x** |
+| Official, 1.1 alpha.1 or newer | for AmigaOS 6.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x | Roadshow / AmiTCP / Miami, or the bundled stack | `xhci.device` **6.x** |
+| Custom build with the dcache extensions | classic 4.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x | bundled lwip-amiga | `xhci.device` **5.x** |
+| Custom build with the dcache extensions | for AmigaOS 6.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x | bundled lwip-amiga | `xhci.device` **6.x** |
 
-The bundled `bsdsocket.library` replaces yours (the old one is kept as
-`bsdsocket.library.orig`); the SANA-II driver leaves your TCP/IP stack alone.
+**Installing the bundled stack replaces your `bsdsocket.library`**, so
+Roadshow, AmiTCP and Miami stop working — and it installs its own `ping`,
+`traceroute`, `arp`, `AddNetInterface`, `RemoveNetInterface`, `NetShutdown`,
+`GetNetStatus` and `ShowNetStatus` into `C:`, over the Roadshow commands of
+those names.
+Your SANA-II Ethernet *hardware* keeps working, though: since lwip-amiga 1.4 the
+bundled stack drives Ethernet-type SANA-II drivers itself, so a Zorro or PCMCIA
+card or a USB Ethernet adapter just gets described in a `DEVS:NetInterfaces/`
+file. What it cannot drive is non-Ethernet SANA-II — PPP and SLIP dial-up,
+Token Ring, ArcNet. And it carries **one interface at a time** besides
+loopback, so it is the Pi's port or your card, not both.
+
 `xhci.device` 5.x also runs on Poseidon for AmigaOS 6.x, just without real USB
 3.0 or fast UAS storage — so it is the safe answer if you are unsure.
 
@@ -90,6 +107,9 @@ the bundled stack, on a gigabit LAN:
 | standard | custom build with the extensions | 698 Mb/s | 477 Mb/s |
 | `-rangeops` | custom build with the extensions | near line rate | near line rate |
 
+Over the SANA-II backend the same stack measures about 290 Mb/s down and
+300 Mb/s up: SANA-II copies every packet and cannot offload checksums.
+
 Why the extensions make that much difference is explained in
 [DEVELOPING.md](DEVELOPING.md#the-dcache-extensions).
 
@@ -97,7 +117,8 @@ Why the extensions make that much difference is explained in
 
 1. Unpack the archive on your Amiga.
 2. Run the `Install` script (double-click it, or run it from a Shell).
-3. Answer the questions — the table above tells you which to pick — and reboot.
+3. Answer the questions — which USB driver, which Ethernet driver, and which
+   TCP/IP stack; the table above tells you which to pick — and reboot.
 
 The installer only copies what you select, never downgrades a newer file without
 asking, and pulls in the supporting libraries automatically, so you cannot end up

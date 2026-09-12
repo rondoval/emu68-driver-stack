@@ -101,25 +101,6 @@
     )
 )
 
-; P_backup - back up an existing file to <name>.orig before it is overwritten,
-; but only once (never clobber an existing .orig).  Used before the netdev line
-; force-replaces bsdsocket.library, so a later switch to a SANA-II stack can
-; restore the user's original TCP/IP library.
-(procedure P_backup #bk_dir #bk_name
-    (set #bk_src (tackon #bk_dir #bk_name))
-    (if (AND (exists #bk_src (noreq))
-             (NOT (exists (tackon #bk_dir (cat #bk_name ".orig")) (noreq))))
-        (copyfiles
-            (prompt (cat "Backing up " #bk_name " to " #bk_name ".orig..."))
-            (help @copyfiles-help)
-            (source #bk_src)
-            (dest #bk_dir)
-            (newname (cat #bk_name ".orig"))
-            (optional "force")
-        )
-    )
-)
-
 ; ---------------------------------------------------------------------------
 ; Welcome
 ; ---------------------------------------------------------------------------
@@ -203,9 +184,11 @@
 ; missing.  The library boxes therefore default OFF: leave them unticked and the
 ; drivers bring the libraries along.
 ;
-; Ethernet (genet) and USB (xhci) are NOT in this list - each is a
-; mutually-exclusive line choice asked separately below, because the two
-; variants of each cannot coexist.
+; Ethernet and USB are NOT in this list.  USB is one mutually-exclusive line
+; choice asked below, because the two xhci.device variants cannot coexist.
+; Ethernet is two questions - the genet.device variant, then the TCP/IP stack -
+; because since 2.1 the bundled stack drives SANA-II drivers too, so the driver
+; no longer decides the stack.
 ; ---------------------------------------------------------------------------
 
 ; Bit layout of the selection mask:
@@ -280,40 +263,79 @@
 (set #install-xhci (OR #usb-context #usb-legacy))
 
 ; ---------------------------------------------------------------------------
-; Ethernet line - one mutually-exclusive choice.
+; Ethernet driver (genet.device) - one mutually-exclusive choice: both variants
+; carry the same file name, so only one of them can be installed.
 ;
-; A SANA-II TCP/IP stack cannot open the netdev driver and the lwip-amiga stack
-; cannot open a SANA-II driver, so exactly one Ethernet line can be installed.
+;   netdev  4.x  zero-copy, and ONLY the bundled lwip-amiga stack can open it
+;                - so this answer settles the TCP/IP question below.
+;   SANA-II 3.x  the classic driver, usable by any TCP/IP stack - including the
+;                bundled one, which drives Ethernet-type SANA-II devices since
+;                lwip-amiga 1.4.
 ; ---------------------------------------------------------------------------
 (if (= @user-level 0)
-    (set #net-choice 0)                      ; NOVICE: netdev + lwip-amiga
-    (set #net-choice
+    (set #genet-choice 0)                    ; NOVICE: netdev genet
+    (set #genet-choice
         (askchoice
-            (prompt "Ethernet and TCP/IP:")
+            (prompt "Ethernet driver (genet.device):")
             (help
-                "Choose ONE networking option - they are\n"
-                "mutually exclusive.\n\n"
-                "  netdev + lwip-amiga - the modern zero-copy\n"
-                "    genet.device 4.x plus the bundled\n"
-                "    bsdsocket.library.  Installing it REPLACES\n"
-                "    any bsdsocket.library you use now.\n\n"
-                "  SANA-II - the classic genet.device 3.x for a\n"
-                "    third-party stack (Roadshow, AmiTCP,\n"
-                "    Miami).  Leaves bsdsocket.library alone.\n\n"
+                "The Pi's onboard Gigabit port.  Both variants\n"
+                "are called genet.device, so pick ONE.\n\n"
+                "  netdev - fast zero-copy driver.  Only the\n"
+                "    bundled lwip-amiga stack can open it, so\n"
+                "    choosing it installs that stack too.\n\n"
+                "  SANA-II - classic driver, works with any\n"
+                "    TCP/IP stack: Roadshow, AmiTCP, Miami -\n"
+                "    and the bundled one, slower than netdev.\n\n"
                 @askchoice-help
             )
             (choices
-                "netdev genet 4.x + lwip-amiga stack"
-                "SANA-II genet 3.x (third-party stack)"
+                "netdev @GENET_VERSION@  (needs the bundled stack)"
+                "SANA-II @GENET_SANA2_VERSION@  (any TCP/IP stack)"
                 "None - no Ethernet driver"
             )
             (default 0)
         )
     )
 )
-(set #net-netdev    (= #net-choice 0))
-(set #net-sana2     (= #net-choice 1))
+(set #net-netdev    (= #genet-choice 0))
+(set #net-sana2     (= #genet-choice 1))
 (set #install-genet (OR #net-netdev #net-sana2))
+
+; ---------------------------------------------------------------------------
+; TCP/IP stack - asked only when netdev was NOT chosen.  netdev genet.device
+; can only be driven by the bundled lwip-amiga stack, so "netdev + keep my own
+; stack" is a combination the user cannot reach; that is why no guard follows.
+; The consent gate below still asks before any bsdsocket.library is replaced.
+; ---------------------------------------------------------------------------
+(if #net-netdev
+    (set #stack-choice 0)                    ; netdev implies the bundled stack
+    (if (= @user-level 0)
+        (set #stack-choice 0)                ; NOVICE: the bundled stack
+        (set #stack-choice
+            (askchoice
+                (prompt "TCP/IP stack:")
+                (help
+                    "Only one bsdsocket.library can be active.\n\n"
+                    "  lwip-amiga - the bundled stack.  Besides the\n"
+                    "    netdev genet it drives Ethernet SANA-II\n"
+                    "    drivers too (not PPP or SLIP), one\n"
+                    "    interface at a time.  It REPLACES your\n"
+                    "    bsdsocket.library and the Roadshow\n"
+                    "    commands in C:\n\n"
+                    "  Leave alone - installs no stack, and\n"
+                    "    touches nothing in LIBS: or C:.\n\n"
+                    @askchoice-help
+                )
+                (choices
+                    "lwip-amiga  (the bundled stack)"
+                    "Leave bsdsocket.library alone"
+                )
+                (default 0)
+            )
+        )
+    )
+)
+(set #install-stack (= #stack-choice 0))
 
 ; openpci.library - optional, off by default, never offered to a NOVICE.
 (if (= @user-level 0)
@@ -342,42 +364,71 @@
     )
 )
 
-; The netdev line replaces the user's bsdsocket.library.  Make them accept that
-; explicitly - declining aborts, since a netdev install without the stack is
-; useless and we must not silently overwrite their TCP/IP library.  This gate runs
-; before anything is installed.
-(if #net-netdev
+; Installing the bundled stack replaces the user's bsdsocket.library.  Make them
+; accept that explicitly - declining aborts, since we must not silently overwrite
+; a TCP/IP library.  This gate runs before anything is installed, and it doubles
+; as the netdev line's disclosure: netdev implies this stack.
+(if #install-stack
     (if (NOT
             (askbool
                 (prompt
                     (cat
-                        "The netdev option installs lwip-amiga's\n"
-                        "bsdsocket.library, REPLACING the one you use\n"
-                        "now.  Any SANA-II TCP/IP stack (Roadshow,\n"
-                        "AmiTCP, Miami) stops working until you\n"
-                        "switch back.\n\n"
-                        "Your current bsdsocket.library is backed up\n"
-                        "to bsdsocket.library.orig first.\n\n"
-                        "Replace bsdsocket.library?"
+                        "The bundled stack installs lwip-amiga's\n"
+                        "bsdsocket.library over the one you use now,\n"
+                        "and its own ping, traceroute, arp and\n"
+                        "AddNetInterface over the Roadshow commands\n"
+                        "of those names in C:.\n\n"
+                        "THIS CANNOT BE UNDONE from here - going back\n"
+                        "means reinstalling Roadshow, AmiTCP or Miami.\n\n"
+                        "Replace them?"
                     )
                 )
                 (help
                     "bsdsocket.library is the AmigaOS TCP/IP API\n"
-                    "library and only one can be active.  Choose\n"
-                    "the SANA-II option instead to keep your\n"
-                    "existing stack."
+                    "library and only one can be active, and the\n"
+                    "commands are Roadshow's own names.  Answer no,\n"
+                    "then run the installer again with the SANA-II\n"
+                    "driver and 'Leave bsdsocket.library alone' to\n"
+                    "keep the stack you have untouched."
                 )
                 (default 1)
             )
         )
         (abort
             (cat
-                "Installation cancelled: the netdev option needs\n"
-                "to replace bsdsocket.library, and you declined.\n\n"
+                "Installation cancelled: the bundled stack has to\n"
+                "replace bsdsocket.library, and you declined.\n\n"
                 "Run the installer again and choose the SANA-II\n"
-                "driver or None."
+                "driver with 'Leave bsdsocket.library alone'."
             )
         )
+    )
+)
+
+; ---------------------------------------------------------------------------
+; Upgrade note.  A 2.0-era ENVARC:netstack.prefs configured the interface
+; itself (DEVICE, UNIT, MODE, ADDRESS, NETMASK, GATEWAY, VLAN).  2.1 ignores
+; those keys - interfaces live in DEVS:NetInterfaces/ - so a static 2.0 setup
+; would quietly come back up on DHCP.  Installer script language cannot read a
+; file's contents, so detect the old layout by presence: the prefs file is
+; there and the NetInterfaces drawer is not, which is exactly what 2.0 left
+; behind.  Runs with the other pre-flight gates, before anything is installed.
+; ---------------------------------------------------------------------------
+(if (AND #install-stack
+         (AND (exists "ENVARC:netstack.prefs" (noreq))
+              (NOT (exists "DEVS:NetInterfaces" (noreq)))))
+    (message
+        (cat
+            "An ENVARC:netstack.prefs from 2.0 was found.\n\n"
+            "Interfaces are not configured there any more:\n"
+            "DEVICE, UNIT, MODE, ADDRESS, NETMASK, GATEWAY\n"
+            "and VLAN are ignored now, so a fixed address\n"
+            "set up under 2.0 comes back up as DHCP.\n\n"
+            "Your prefs file is left alone.  Put those\n"
+            "settings in DEVS:NetInterfaces/genet after\n"
+            "installing - the ReadMe shows the format."
+        )
+        (all)
     )
 )
 
@@ -385,15 +436,18 @@
 ; Dependency resolution (union of explicit selection and derived needs)
 ; ---------------------------------------------------------------------------
 (set #need-bcmpcie (OR #sel-bcmpcie #install-xhci #install-nvme #install-lspci #install-openpci))
-(set #any-component (OR #need-bcmpcie #install-genet #sel-gic400))
 
-; gic400 is needed by every driver, so install it like any other library in the
-; stack whenever anything is selected.  P_copyver still refuses to overwrite an
+; gic400 is needed by every DRIVER, so install it like any other library in the
+; stack whenever one is selected.  P_copyver still refuses to overwrite an
 ; equal or newer LIBS: copy without asking.  Note the LIBS: copy goes unused on
 ; a machine whose Emu68 supplies gic400.library from its ROM board (that copy is
 ; already in exec's library list, so OpenLibrary never reaches LIBS:) - the
-; closing message says so.
-(set #install-gic400 #any-component)
+; closing message says so.  The bundled stack on its own does not need it.
+(set #install-gic400 (OR #need-bcmpcie #install-genet #sel-gic400))
+
+; The stack can be installed with no genet at all (an Ethernet SANA-II card is
+; reason enough), so it counts as a component in its own right.
+(set #any-component (OR #install-gic400 #install-stack))
 
 ; Nothing selected at all - nothing to do.
 (if (NOT #any-component)
@@ -437,12 +491,22 @@
     )
 )
 (if #install-lspci   (set #need-c (+ #need-c (getsize "C/lspci"))))
-(if #net-netdev
+(if #net-netdev (set #need-c (+ #need-c (getsize "C/netdev-stats"))))
+(if #install-stack
     (
         (set #need-libs (+ #need-libs (getsize "LIBS/bsdsocket.library")))
-        (set #need-c    (+ #need-c (getsize "C/netdev-stats")))
         (set #need-c    (+ #need-c (getsize "C/netinfo")))
+        (set #need-c    (+ #need-c (getsize "C/GetNetStatus")))
+        (set #need-c    (+ #need-c (getsize "C/ShowNetStatus")))
         (set #need-c    (+ #need-c (getsize "C/mdns")))
+        (set #need-c    (+ #need-c (getsize "C/AddNetInterface")))
+        (set #need-c    (+ #need-c (getsize "C/RemoveNetInterface")))
+        (set #need-c    (+ #need-c (getsize "C/NetShutdown")))
+        (set #need-c    (+ #need-c (getsize "C/arp")))
+        (set #need-c    (+ #need-c (getsize "C/ping")))
+        (set #need-c    (+ #need-c (getsize "C/traceroute")))
+        (set #need-c    (+ #need-c (getsize "C/NetLogViewer")))
+        (set #need-c    (+ #need-c (getsize "C/NetLogViewer.info")))
     )
 )
 
@@ -503,11 +567,22 @@
     )
 )
 
+; Counter tools pair with the DRIVER, not with the stack: netdev-stats speaks the
+; netdev command set straight to the device, genet-stats the SANA-II one, so each
+; is useless against the other variant.
+(if #net-netdev (P_copyforce "C/netdev-stats" "C:"))
+(if #net-sana2  (P_copyforce "Storage/C/genet-stats" "C:"))
+
 (if #install-nvme
     (
         (set #did-nvme (P_copyver "DEVS/nvme.device" "DEVS:" "nvme.device"))
-        ; nvmeinfo / nvmeadm - diagnostic and admin tools, kept in lockstep with the driver.
-        (if #did-nvme
+        ; nvmeinfo / nvmeadm - diagnostic and admin tools, kept in lockstep with the
+        ; driver: (re)install them when the driver was just (re)installed, or when
+        ; they are missing entirely (keeping an existing driver must not leave the
+        ; user with no tools).  Same rule as lspci below.
+        (if (OR #did-nvme
+                (OR (NOT (exists "C:nvmeinfo" (noreq)))
+                    (NOT (exists "C:nvmeadm" (noreq)))))
             (
                 (P_copyforce "C/nvmeinfo" "C:")
                 (P_copyforce "C/nvmeadm" "C:")
@@ -517,62 +592,90 @@
 )
 (complete 55)
 
-; netdev line -> LIBS:bsdsocket.library (backed up, then force-replaced), its
-; tools, and the config template.  The template lands in ENVARC: only when no
-; netstack.prefs exists yet - a reinstall never clobbers a live configuration.
-(if #net-netdev
+; Bundled stack -> LIBS:bsdsocket.library (force-replaced), its
+; tools, and the configuration.  Config files land only when absent - a
+; reinstall never clobbers a live configuration: the stack-wide template in
+; ENVARC:netstack.prefs, the sample interface file in DEVS:NetInterfaces/
+; (Roadshow model: interfaces are added at boot by AddNetInterface), and
+; S:Network-Startup with the boot line, executed from a marker-guarded
+; User-Startup block (the startup command asks first).
+(if #install-stack
     (
-        (P_backup "LIBS:" "bsdsocket.library")
         (P_copyforce "LIBS/bsdsocket.library" "LIBS:")
-        (P_copyforce "C/netdev-stats" "C:")
         (P_copyforce "C/netinfo" "C:")
+        (P_copyforce "C/GetNetStatus" "C:")
+        (P_copyforce "C/ShowNetStatus" "C:")
         (P_copyforce "C/mdns" "C:")
+        (P_copyforce "C/AddNetInterface" "C:")
+        (P_copyforce "C/RemoveNetInterface" "C:")
+        (P_copyforce "C/NetShutdown" "C:")
+        (P_copyforce "C/arp" "C:")
+        (P_copyforce "C/ping" "C:")
+        (P_copyforce "C/traceroute" "C:")
+        (P_copyforce "C/NetLogViewer" "C:")
+        (P_copyforce "C/NetLogViewer.info" "C:")
         (if (NOT (exists "ENVARC:netstack.prefs" (noreq)))
             (copyfiles
-                (prompt "Installing the default netstack.prefs (DHCP)...")
+                (prompt "Installing the default netstack.prefs...")
                 (help @copyfiles-help)
                 (source "ENVARC/netstack.prefs.default")
                 (dest "ENVARC:")
                 (newname "netstack.prefs")
             )
         )
-    )
-)
-
-; SANA-II line -> the genet-stats counter tool, plus an offer to restore a
-; bsdsocket.library that a previous netdev install backed up (so a third-party
-; stack works again).  The SANA-II line installs no bsdsocket of its own.
-(if #net-sana2
-    (
-        (P_copyforce "Storage/C/genet-stats" "C:")
-        (if (exists "LIBS:bsdsocket.library.orig" (noreq))
-            (if (askbool
-                    (prompt
-                        (cat
-                            "A bsdsocket.library backed up by an earlier\n"
-                            "netdev install was found.  Restore it so your\n"
-                            "SANA-II stack (Roadshow, AmiTCP, Miami) works\n"
-                            "again?"
-                        )
-                    )
-                    (help @copyfiles-help)
-                    (default 1)
-                )
-                (
-                    (copyfiles
-                        (prompt "Restoring bsdsocket.library...")
-                        (help @copyfiles-help)
-                        (source "LIBS:bsdsocket.library.orig")
-                        (dest "LIBS:")
-                        (newname "bsdsocket.library")
-                        (optional "force")
-                    )
-                    (delete "LIBS:bsdsocket.library.orig")
+        ; The boot line globs this drawer, so it has to exist even when no
+        ; interface file is installed alongside it (a SANA-II card the user
+        ; describes themselves).
+        (makedir "DEVS:NetInterfaces")
+        ; Reference copy of the commented sample.  SYS:Storage is the inactive
+        ; drawer, so it can never feed the boot wildcard - it is the template
+        ; for writing a file for some other Ethernet device.
+        (copyfiles
+            (prompt "Installing the sample interface file...")
+            (help @copyfiles-help)
+            (source "Storage/NetInterfaces/genet")
+            (dest "SYS:Storage/NetInterfaces")
+        )
+        ; The live interface file names networks/genet.device, and TYPE defaults
+        ; to AUTO - which has to open the device to probe it - so write it only
+        ; when a genet.device is actually installed.  One file serves both
+        ; variants: the probe tells netdev and SANA-II apart by itself.
+        (if (AND #install-genet (NOT (exists "DEVS:NetInterfaces/genet" (noreq))))
+            (copyfiles
+                (prompt "Installing DEVS:NetInterfaces/genet (DHCP)...")
+                (help @copyfiles-help)
+                (source "Storage/NetInterfaces/genet")
+                (dest "DEVS:NetInterfaces")
+            )
+        )
+        (if (NOT (exists "S:Network-Startup" (noreq)))
+            (textfile
+                (prompt "Creating S:Network-Startup (boot-time setup)...")
+                (help @copyfiles-help)
+                (dest "S:Network-Startup")
+                (append "; $VER: Network-Startup 1.0 (emu68 driver stack)\n")
+                (append "; Adds every interface configured in DEVS:NetInterfaces/.\n")
+                (append "FailAt 30\n")
+                (append "C:AddNetInterface DEVS:NetInterfaces/~(#?.info) QUIET\n")
+            )
+        )
+        (startup "emu68 network"
+            (prompt
+                (cat
+                    "The network interfaces are brought up at boot\n"
+                    "by S:Network-Startup.  Add these lines to\n"
+                    "S:User-Startup?\n\n"
+                    "If EXISTS S:Network-Startup\n"
+                    "  Execute S:Network-Startup\n"
+                    "EndIf"
                 )
             )
+            (help @startup-help)
+            (command "If EXISTS S:Network-Startup\nExecute S:Network-Startup\nEndIf")
         )
     )
 )
+
 (complete 80)
 
 ; Diagnostic tool -> C:.  Keep lspci in lockstep with bcmpcie.library: (re)install
@@ -590,9 +693,15 @@
 ; Done
 ; ---------------------------------------------------------------------------
 ; One headline, then at most one two-line note per topic that was installed,
-; then the ReadMe pointer.  The usb-* and net-* notes are mutually exclusive,
-; so the worst case (USB + Ethernet + gic400) is ten rendered lines - the
-; whole budget.  Any note added here must displace another one.
+; then the ReadMe pointer.  The worst case (USB + Ethernet + gic400) is ten
+; rendered lines - the whole budget.  Any note added here must displace
+; another one.
+;
+; That holds because at most ONE net note can fire.  The usb-* pair is
+; mutually exclusive by construction, but the two net notes are not: since
+; 2.1 the SANA-II driver can be installed together with the bundled stack, so
+; the SANA-II note is explicitly suppressed when the stack note already
+; covers the machine.  Do not drop that condition.
 (set #done-msg "Installation complete - reboot to activate.\n\n")
 (if #usb-context
     (set #done-msg
@@ -610,15 +719,15 @@
         )
     )
 )
-(if #net-netdev
+(if #install-stack
     (set #done-msg
         (cat #done-msg
-            "* TCP/IP configures itself by DHCP; settings\n"
-            "  live in ENVARC:netstack.prefs\n"
+            "* TCP/IP: interfaces live in DEVS:NetInterfaces,\n"
+            "  added at boot by S:Network-Startup (DHCP)\n"
         )
     )
 )
-(if #net-sana2
+(if (AND #net-sana2 (NOT #install-stack))
     (set #done-msg
         (cat #done-msg
             "* point a TCP/IP stack (Roadshow) at\n"
