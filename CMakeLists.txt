@@ -447,12 +447,18 @@ Archive variants:
 
 Which one to take:
 
-  Emu68            Poseidon  Archive             Ethernet     USB
-  ---------------  --------  ------------------  -----------  ------
-  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x  5.x
-  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x  6.x
-  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x   5.x
-  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x   6.x
+  Emu68            Poseidon  Archive             Ethernet drv  TCP/IP     USB
+  ---------------  --------  ------------------  ------------  ---------  ---
+  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x   any        5.x
+  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x   any        6.x
+  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x    bundled    5.x
+  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x    bundled    6.x
+
+'any' = your existing Roadshow/AmiTCP/Miami, or the bundled bsdsocket.library:
+since lwip-amiga 1.4 the bundled stack drives Ethernet-type SANA-II drivers as
+well as the netdev one, so the driver and the stack are separate choices and
+the installer asks them separately. The stack carries one interface at a time
+besides loopback.
 
 The standard archives run on any Emu68 from 1.1 alpha.1 on.  The -rangeops
 archives hold the same drivers built to use the dcache extensions and are
@@ -481,7 +487,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, Arp -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, Arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -566,9 +572,12 @@ add_custom_target(package
         "${PACKAGE_STAGE}/Developer/include/libraries/"
     # Copy installer files, then swap in the version-stamped Install/ReadMe (the
     # source tree carries the .in templates; the generated files replace them).
+    # installer/icons/ is host-side source art and its generator — the produced
+    # Install.info is committed, so nothing there belongs in the archive.
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/installer" "${PACKAGE_STAGE}"
     COMMAND ${CMAKE_COMMAND} -E rm -f "${PACKAGE_STAGE}/Install.in" "${PACKAGE_STAGE}/ReadMe.in"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${PACKAGE_STAGE}/icons"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_BINARY_DIR}/installer/Install" "${PACKAGE_STAGE}/Install"
     COMMAND ${CMAKE_COMMAND} -E copy

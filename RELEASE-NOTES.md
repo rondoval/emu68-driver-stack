@@ -1,3 +1,191 @@
+# Release notes — Emu68 driver stack 2.1.0
+
+Changes since 2.0.0. The TCP/IP stack stops being tied to the Pi's own Ethernet
+port — it now drives ordinary SANA-II network hardware as well — network
+control grows the Roadshow-style commands it was missing, and every driver in
+the stack can be built into a custom Kickstart ROM, so a machine can boot from
+USB or NVMe.
+
+- **Your existing network card works with the bundled stack.** A Zorro or
+  PCMCIA Ethernet card, or a USB Ethernet adapter, no longer rules out
+  lwip-amiga: the stack drives Ethernet-type SANA-II drivers itself now, and
+  detects which kind of driver it is talking to.
+- **Roadshow-style network control.** `AddNetInterface`,
+  `RemoveNetInterface`, `NetShutdown`, `arp`, `ping`, `traceroute`,
+  `GetNetStatus`/`ShowNetStatus`, and a `NetLogViewer` commodity that shows
+  what the stack is doing. The conformance score reaches a clean 142/142.
+- **Boot from USB or NVMe in a custom Kickstart ROM.** Nothing changes for a
+  normal `DEVS:`/`LIBS:` install.
+- **exFAT partitions mount** on NVMe — which can renumber `NVME<n>:`, see
+  below.
+
+Two things can leave a working machine behaving differently, so read *Before
+you upgrade* first. Which archive to take, and what the installer asks, are in
+the [README](https://github.com/rondoval/emu68-driver-stack/blob/main/README.md)
+and in the `ReadMe` beside this file in the archive.
+
+---
+
+## Before you upgrade
+
+**Network configuration moved out of `ENVARC:netstack.prefs`.** Interface
+settings — `DEVICE`, `UNIT`, `MODE`, `ADDRESS`, `NETMASK`, `GATEWAY`, `VLAN` —
+are no longer read from it. Each interface now has its own file in
+`DEVS:NetInterfaces/`, added at boot by `AddNetInterface` from
+`S:Network-Startup`, which the installer sets up for you. `netstack.prefs`
+keeps the stack-wide keys (`HOSTNAME`, `DOMAIN`, `DNS1`/`DNS2`, `MDNS*`,
+`NETWORK`) and those still work. **A fixed address configured under 2.0 must be
+re-entered** in `DEVS:NetInterfaces/genet` — otherwise the machine comes up on
+DHCP. The installer shows a screen when it finds a 2.0-era prefs file, and
+changes nothing itself; the archive `ReadMe` lists which key moves where.
+
+**`NVME<n>:` numbering can shift.** exFAT partitions mount now, and each takes
+the next free `NVME<n>:`, so a partition that follows an exFAT one may come up
+under a different number than in 2.0. RDB partitions keep the names their RDB
+carries and are unaffected.
+
+---
+
+## Component versions in this release
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `emu68-common` (support library) | **1.9.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v1.9.1/RELEASE-NOTES.md) |
+| `gic400.library` | **1.8** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.8/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.4/RELEASE-NOTES.md) |
+| `openpci.library` | 45.12 | bundled with `bcmpcie.library` |
+| `xhci.device` (6.x) | **6.2** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.2/RELEASE-NOTES.md) |
+| `xhci.device` (5.x) | **5.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.4/RELEASE-NOTES.md) |
+| `genet.device` (4.x, netdev) | **4.2** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v4.2/RELEASE-NOTES.md) |
+| `genet.device` (3.x, SANA-II) | **3.15** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.15/RELEASE-NOTES.md) |
+| `nvme.device` | **1.5** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.5/RELEASE-NOTES.md) |
+| lwip-amiga (TCP/IP stack) | **1.4** — ships `bsdsocket.library` **4.104** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.4/RELEASE-NOTES.md) |
+
+---
+
+## What changed
+
+### Networking — the stack drives your existing hardware
+
+lwip-amiga gains a **SANA-II backend**. Besides its native `netdev`
+interface it now drives classic Ethernet-type SANA-II drivers — Poseidon USB
+Ethernet adapters, Zorro and PCMCIA cards, and the SANA-II `genet.device` —
+detecting which kind a device speaks when the interface is added; the new
+`TYPE` option in the interface file forces `NETDEV` or `SANA2` when the probe
+needs overriding. Non-Ethernet SANA-II (Token Ring, ArcNet, serial-line
+drivers) is not supported. SANA-II is copy-based and offload-blind, so expect
+roughly 290/300 Mb/s against it rather than the netdev numbers.
+
+Network control is now Roadshow-shaped. `AddNetInterface` brings interfaces up
+from `DEVS:NetInterfaces/` files and blocks until they are actually usable —
+link up, DHCP lease bound; `RemoveNetInterface` takes one down again; and
+`NetShutdown` stops the whole stack, waits for network programs to quit, and
+unloads the library. `arp` displays, sets and deletes ARP entries, with the
+classic `SIOCSARP`/`SIOCGARP`/`SIOCDARP` `IoctlSocket()` requests behind it.
+`ping` and `traceroute` arrive with Roadshow-compatible templates, and
+`setsockopt(IP_HDRINCL)` now works for raw sockets. `GetNetStatus` and
+`ShowNetStatus` answer the Roadshow status query.
+
+The stack also **logs in every build**, not just debug ones: interface
+bring-up and removal, driver selection, link changes, DHCP leases, DNS and
+mDNS, mistakes in `netstack.prefs`, and shutdown. The log is delivered over the
+public `SBTC_LOG_HOOK` tag so any program can subscribe, application `syslog()`
+output joins it, and the new `NetLogViewer` commodity (Shift-Alt-F8, or
+Exchange) shows it in a window and saves it to a file. A short boot backlog is
+replayed to a viewer that starts late.
+
+TCP **out-of-band data** works end to end — `MSG_OOB`, `SO_OOBINLINE`,
+`SIOCATMARK`, `WaitSelect()` exception sets and the `SetSocketSignals()` urgent
+signal — which takes the bsdsocktest conformance score from 138/142 to a clean
+**142/142**. `FIOASYNC` became a real per-socket SIGIO toggle, and
+`SBTC_ERRNOSTRPTR`/`SBTC_HERRNOSTRPTR` return BSD error text. One fix worth
+naming: UDP `connect()` now commits the local address the BSD way, so
+`getsockname()` reports the real source address instead of `0.0.0.0`, and
+connecting toward a destination with no route fails with `ENETUNREACH` instead
+of appearing to succeed.
+
+See the [component notes](https://github.com/rondoval/lwip-amiga/blob/v1.4/RELEASE-NOTES.md)
+for the full list, including the interface-file format.
+
+### Boot from USB or NVMe in a custom Kickstart ROM
+
+This one spans the whole stack. `bcmpcie.library` 2.4 initialises early enough
+in the Kickstart boot sequence to serve drivers before DOS exists;
+`gic400.library` 1.8 works when embedded in a ROM image, which it previously
+did not; both `xhci.device` lines come up during that sequence, so USB
+keyboard, mouse and drives are live in the early boot menu; and `nvme.device`
+1.5 moves its romtag into the coldstart window so its namespaces are probed
+after Emu68's own modules exist — at its old priority it ran before
+`devicetree.resource` and `gic400.library`, and NVMe never came up at all.
+
+Together that makes a Kickstart image that can boot the machine from a USB or
+NVMe drive. **Nothing changes for a normal `DEVS:`/`LIBS:` installation** —
+this is only about ROM images, which are built separately.
+
+### Storage — exFAT automount
+
+`nvme.device` 1.5 mounts **exFAT** filesystems on MBR, GPT and superfloppy
+disks through `L:exFATFileSystem` (dostype `FATX`), alongside FAT (`fat95`) and
+NTFS (`NTFileSystem3G`). These are the same three recipes `massstorage.class`
+uses, so a drive behaves the same whether it is in a USB enclosure or an NVMe
+slot. A filesystem whose handler is not installed is skipped rather than
+mounted dead. This is what can renumber `NVME<n>:` — see *Before you upgrade*.
+See the [component notes](https://github.com/rondoval/emu68-nvme-driver/blob/v1.5/RELEASE-NOTES.md).
+
+### Ethernet — the SANA-II line joins the `-rangeops` archives
+
+`genet.device` 3.15 moves its datapath onto the stack's shared cache
+operations, so a `-rangeops` build uses Emu68's fast inline cache instructions
+like the rest of the stack. In 2.0 only the netdev line benefited, so a
+Roadshow, AmiTCP or Miami user on a custom Emu68 now has a reason to take the
+`-rangeops` archive. Those builds also check the `/emu68` device tree's
+`dcache-range-ops` capability at init and refuse to load on firmware that would
+Line-F trap, instead of crashing. One reliability fix: a malformed receive
+descriptor could make the driver invalidate cache lines past the end of the
+receive buffer, and the invalidate now happens only after the descriptor passes
+its checks. See the
+[component notes](https://github.com/rondoval/emu68-genet-driver/blob/v3.15/RELEASE-NOTES.md).
+
+### Installing
+
+The installer now asks for the Ethernet driver and the TCP/IP stack as **two
+separate questions**, because the bundled stack no longer implies the netdev
+driver. Picking netdev still answers both, since nothing else can open it.
+Choosing the SANA-II driver leaves the stack question open — pair it with
+Roadshow as before, or with the bundled stack. The bundled stack can also be
+installed with no `genet.device` at all, which is the right answer when you
+connect through a card or USB adapter.
+
+It also warns when it finds a 2.0-era `ENVARC:netstack.prefs` whose interface
+keys it knows are now ignored, installs the commented interface-file sample to
+`SYS:Storage/NetInterfaces/` as a template for describing other hardware.
+`nvmeinfo` and `nvmeadm` are now installed when missing even if you keep an
+existing `nvme.device`.
+
+## Known limitations
+
+- **One network interface at a time.** Besides loopback the bundled stack
+  carries a single interface; a second `AddNetInterface` is refused. If
+  `DEVS:NetInterfaces/` holds more than one file, the boot line adds the one
+  with the highest `PRI=` icon tooltype and silently skips the rest — keep the
+  spares in `SYS:Storage/NetInterfaces/`. Swap interfaces with
+  `RemoveNetInterface` followed by `AddNetInterface`.
+- Non-Ethernet SANA-II drivers (PPP, SLIP, Token Ring, ArcNet) are not
+  supported by the bundled stack.
+- `ping RECORDROUTE`, published/proxy `arp` entries, and Roadshow's
+  `SBTC_LOG_FILE_NAME` log file are not implemented.
+
+## Build & tooling
+
+A hardcoded `-m68040` was removed across the whole stack. It overrode the
+toolchain's `M68K_CPU`, so a build targeting anything other than a 68040
+silently produced 68040 code anyway; every component picks up the fix, which is
+the only change in `emu68-common` 1.9.1 and `genet.device` 4.2.
+`scripts/check-regargs.py` is gone — gcc 16.2 made the register-argument ABI
+check it performed unnecessary.
+
+---
+
 # Release notes — Emu68 driver stack 2.0.0
 
 > **2.0.0 is a big release — treat it as beta.** Nearly everything in the

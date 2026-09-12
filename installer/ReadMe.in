@@ -2,11 +2,13 @@ emu68 Driver Stack @PACKAGE_VERSION@
 ========================
 AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
 
-*** @PACKAGE_VERSION@ is a big release - treat it as beta. Nearly everything
-*** in the networking path is new: a TCP/IP stack, a new driver ABI, a
-*** rewritten Ethernet driver, and a second USB driver line. Keep a bootable
-*** backup of your current LIBS: and DEVS: before installing, and please
-*** report what breaks.
+*** UPGRADING FROM 2.0? Two things can change how your machine comes up.
+*** Network interfaces are no longer configured in ENVARC:netstack.prefs -
+*** each one now has its own file in DEVS:NetInterfaces/ - so a fixed address
+*** set up under 2.0 comes back up on DHCP until you re-enter it there; the
+*** Install script warns you when it sees an old prefs file. And NVMe
+*** partition numbering can shift, because exFAT partitions now mount too.
+*** Keep a bootable backup of LIBS: and DEVS: before installing.
 
 
 THIS ARCHIVE
@@ -34,31 +36,40 @@ built around that housekeeping being cheap, ends up SLOWER than the plain old
 SANA-II driver. So on official Emu68 there is no point installing the netdev
 Ethernet driver at all: take the standard archive and pair the SANA-II driver
 with Roadshow, AmiTCP or Miami. On a custom build with the extensions, take the
-'-rangeops' archive and the netdev driver with the bundled bsdsocket.library,
+'-rangeops' archive and the netdev driver with the bundled lwip-amiga stack,
 which gets you close to gigabit line rate. USB is a separate, independent
 question: it depends only on which Poseidon you run.
 
+The installer asks two separate questions - which genet.device, and which
+TCP/IP stack. They are independent now: since its 1.4 release the bundled
+lwip-amiga stack drives classic SANA-II Ethernet drivers as well as the
+netdev one, so the SANA-II genet works with either stack.
+
 Find your row:
 
-  Emu68            Poseidon  Archive             Ethernet     USB
-  ---------------  --------  ------------------  -----------  ------
-  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x  5.x
-  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x  6.x
-  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x   5.x
-  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x   6.x
-
+  Emu68            Poseidon  Archive             Ethernet drv  TCP/IP     USB
+  ---------------  --------  ------------------  ------------  ---------  ---
+  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x   any        5.x
+  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x   any        6.x
+  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x    bundled    5.x
+  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x    bundled    6.x
+  
   official 1.1a1+  Emu68 1.1 alpha.1 or newer, official build
   custom+dcache    a custom Emu68 build carrying the dcache extensions
   4.x / 6.x        classic Poseidon 4.x / Poseidon for AmigaOS 6.x
   <ver>.lha        emu68-drivers-@PACKAGE_VERSION@.lha
+  any              your existing Roadshow/AmiTCP/Miami, or the bundled stack
 
-CHOOSING NETDEV TURNS OFF EVERY OTHER NETWORK INTERFACE YOU HAVE. The bundled
-bsdsocket.library is not a SANA-II stack: it drives network hardware over the
-new netdev interface, and genet.device 4.x is the only driver in existence that
-speaks it. Anything else you connect through - a Zorro or PCMCIA Ethernet card,
-a USB Ethernet adapter, a PPP or SLIP dial-up link - has a SANA-II driver only,
-and will stop working once the bundled stack replaces your bsdsocket.library.
-If you need any of them, take a SANA-II row.
+INSTALLING THE BUNDLED STACK REPLACES YOUR bsdsocket.library, so Roadshow,
+AmiTCP and Miami stop working. It also installs its own ping, traceroute, arp,
+AddNetInterface, RemoveNetInterface, NetShutdown, GetNetStatus and
+ShowNetStatus into C:, over the Roadshow commands of those names. THERE IS NO
+UNDO - going back means reinstalling your old stack. Your SANA-II
+Ethernet HARDWARE keeps working - the bundled stack drives it, you just
+describe it in a DEVS:NetInterfaces/ file instead. What it cannot drive is
+non-Ethernet SANA-II: PPP and SLIP dial-up, Token Ring, ArcNet. Note also that
+the stack carries ONE interface at a time besides loopback, so it is the Pi's
+port or your card, not both.
 
 xhci.device 5.x also runs on Poseidon for AmigaOS 6.x, just without real USB
 3.0 or fast UAS storage - so it is the safe answer if you are unsure.
@@ -69,11 +80,15 @@ Emu68 without the extensions is safe: the Install script checks, says so, and
 stops without changing anything.
 
 Where the advice comes from - measured TCP throughput over gigabit Ethernet,
-using genet.device with the bundled bsdsocket.library:
+using genet.device with the bundled lwip-amiga stack:
 
   official Emu68,             standard archive   104 Mbit/s in,  79 out
   Emu68 with the extensions,  standard archive   698 Mbit/s in, 477 out
   Emu68 with the extensions,  -rangeops archive  near line rate
+
+Those are the netdev driver. Over the SANA-II backend the same stack measures
+about 290 Mbit/s in and 300 out: SANA-II copies every packet and cannot offload
+checksums, so it gives up most of the netdev gain.
 
 
 COMPONENTS
@@ -111,39 +126,56 @@ xhci.device (DEVS:USBHardware/)
 
 genet.device (DEVS:Networks/)
   Gigabit Ethernet for the port built into the Raspberry Pi 4 / CM4. It comes
-  in two versions and you pick ONE at install time (see WHAT TO INSTALL above):
+  in two versions and you pick ONE at install time (see WHAT TO INSTALL above);
+  the choice no longer decides your TCP/IP stack:
 
-    netdev  @GENET_VERSION@   the driver for the bundled TCP/IP stack
-      (bsdsocket.library, below). It is NOT a SANA-II driver, so Roadshow,
-      AmiTCP and Miami cannot use it.
+    netdev  @GENET_VERSION@   the fast zero-copy driver. Only the bundled
+      lwip-amiga stack can open it, so Roadshow, AmiTCP and Miami cannot -
+      choosing it installs the bundled stack as well. Its netdev-stats
+      counter tool installs to C:.
 
-    SANA-II @GENET_SANA2_VERSION@  the classic driver for a third-party TCP/IP
-      stack (Roadshow, AmiTCP, Miami). It rides in the archive under Storage/
-      and is installed to DEVS:Networks/ only if you choose it; its
-      genet-stats counter tool then installs to C:.
+    SANA-II @GENET_SANA2_VERSION@  the classic driver. Works with a third-party
+      stack (Roadshow, AmiTCP, Miami) AND with the bundled one, which has
+      driven Ethernet SANA-II devices since lwip-amiga 1.4 - slower than
+      netdev either way. It rides in the archive under Storage/ and is
+      installed to DEVS:Networks/ only if you choose it; its genet-stats
+      counter tool then installs to C:.
 
-bsdsocket.library @BSDSOCKET_VERSION@ (LIBS:)  [lwip-amiga @LWIP_VERSION@]
-  A modern TCP/IP stack, installed with the netdev Ethernet version. Opening
-  it starts the stack (loopback only); the network interface is added at boot
-  by S:Network-Startup running 'AddNetInterface', from the config file
+lwip-amiga @LWIP_VERSION@ (LIBS:bsdsocket.library @BSDSOCKET_VERSION@)
+  A modern TCP/IP stack. It provides the standard AmigaOS networking API under
+  the usual library name, which is why installing it replaces whatever
+  bsdsocket.library you have.
+  Opening it starts the stack (loopback only); the network interface is added
+  at boot by S:Network-Startup running 'AddNetInterface', from the config file
   DEVS:NetInterfaces/genet (DHCP by default; the file holds a fixed address
   or VLAN too). Stack-wide settings - hostname, DNS servers, mDNS - live in
   ENVARC:netstack.prefs.
-  Installing it REPLACES any existing bsdsocket.library (yours is backed up to
-  bsdsocket.library.orig first).
-  It is NOT a SANA-II stack - it talks to network hardware over the new netdev
-  interface, and genet.device 4.x is the only driver that speaks it. Any other
-  network interface you use (Zorro or PCMCIA Ethernet card, USB Ethernet
-  adapter, PPP or SLIP dial-up) has a SANA-II driver only and will stop working
-  once this library is installed.
+  Installing it REPLACES any existing bsdsocket.library, and its commands
+  below replace the Roadshow ones of the same name in C:. Neither is undone
+  by re-running the installer - reinstall your old stack to go back.
+  Besides the netdev genet it also drives classic Ethernet-type SANA-II
+  drivers - a Zorro or PCMCIA card, a USB Ethernet adapter - which it detects
+  automatically; write a file for one by copying the commented sample from
+  SYS:Storage/NetInterfaces/genet and editing DEVICE=. Non-Ethernet SANA-II
+  (PPP, SLIP, Token Ring, ArcNet) is not supported.
+  ONE interface at a time: besides loopback the stack carries a single
+  interface, so a second AddNetInterface is refused. If DEVS:NetInterfaces/
+  holds more than one file the boot line picks the highest PRI= tooltype and
+  silently skips the rest - keep the spares in SYS:Storage/NetInterfaces/.
 
-netdev-stats, netinfo, mdns (C:)
-  Networking tools installed with the netdev version. netdev-stats shows driver
-  and interface counters; netinfo reports the address and DNS settings the
-  stack ended up with; mdns looks up and announces .local names.
+netdev-stats (C:)
+  Installed with the netdev genet.device: shows that driver's own counters and
+  interface statistics live. It speaks the netdev command set directly, so it
+  does not work against the SANA-II driver - that one has genet-stats.
+
+netinfo, mdns, GetNetStatus, ShowNetStatus (C:)
+  Networking tools installed with the bundled stack. netinfo reports the
+  address and DNS settings the stack ended up with; mdns looks up and
+  announces .local names; GetNetStatus and ShowNetStatus are the
+  Roadshow-compatible status query and report.
 
 AddNetInterface, RemoveNetInterface, NetShutdown, arp (C:)
-  Roadshow-style network control, installed with the netdev version.
+  Roadshow-style network control, installed with the bundled stack.
   AddNetInterface adds interfaces from DEVS:NetInterfaces/ files (blocking
   until the DHCP lease arrives); RemoveNetInterface takes one down again
   (FORCE overrides the in-use refusal); NetShutdown stops the whole stack
@@ -152,15 +184,15 @@ AddNetInterface, RemoveNetInterface, NetShutdown, arp (C:)
   supported).
 
 ping, traceroute (C:)
-  The classic 4.4BSD network diagnostics, installed with the netdev version,
+  The classic 4.4BSD network diagnostics, installed with the bundled stack,
   with Roadshow-compatible command templates. ping sends ICMP echo requests
   and reports round-trip times and packet loss; traceroute maps the gateways
   a packet crosses on its way to a host (ping's RECORDROUTE option is not
   supported by this stack).
 
 NetLogViewer (C:, with icon)
-  Log viewer, installed with the netdev version: a Commodity
-  that captures every message bsdsocket.library and its clients log
+  Log viewer, installed with the bundled stack: a Commodity
+  that captures every message the stack and its clients log
   (interface and link state, DHCP leases, errors, syslog() output) and shows
   them in a window with time, origin and severity; the list can be saved to
   a file. Shift-Alt-F8 (CX_POPKEY) shows the window, Exchange hides and
@@ -194,15 +226,21 @@ INSTALLATION
 Run the included 'Install' script using the Commodore Installer tool
 (v43.3 or later, included with AmigaOS 3.1.4+).
 
-Pick the components you want from the checklist, then choose ONE USB version
-(xhci 6.x, xhci 5.x, or none) and ONE Ethernet version (netdev + the bundled
-stack, SANA-II, or none) when asked. The installer pulls in the libraries they
-need automatically, so you cannot end up with a driver whose library is
-missing, and it never downgrades a newer copy already on your system - if an
-equal or newer version is installed, it asks first. Three things are always
-replaced, because switching versions keeps the same filename and a version
-check would refuse: the chosen xhci.device, the chosen genet.device and, with
-the netdev choice, bsdsocket.library.
+Pick the components you want from the checklist, then answer three questions:
+ONE USB version (xhci 6.x, xhci 5.x, or none), ONE Ethernet driver (netdev
+genet, SANA-II genet, or none) and - unless you picked netdev, which answers
+it for you - which TCP/IP stack (the bundled lwip-amiga, or leave
+bsdsocket.library alone). The installer pulls in the libraries they need
+automatically, so you cannot end up with a driver whose library is missing,
+and it never downgrades a newer copy already on your system - if an equal or
+newer version is installed, it asks first. Three things are always replaced,
+because switching versions keeps the same filename and a version check would
+refuse: the chosen xhci.device, the chosen genet.device and, when you choose
+the bundled stack, bsdsocket.library.
+
+If you are upgrading from 2.0 the installer shows one extra screen, telling
+you that the interface settings in your ENVARC:netstack.prefs are no longer
+read. It changes nothing - see AFTER INSTALLATION for what to move where.
 
 On the -rangeops archives the Install script first checks that your Emu68 has
 the dcache extensions and refuses to continue if it does not. If you are
@@ -230,14 +268,32 @@ full set is:
              USB host controller in Trident. On Poseidon for AmigaOS 6.x the
              6.x version is the faster one - re-run the installer to switch.
 
-  netdev     S:Network-Startup adds the network interface at boot with
-             AddNetInterface (DHCP; per-interface settings live in
+  bundled    S:Network-Startup adds the network interface at boot with
+  stack      AddNetInterface (DHCP; per-interface settings live in
              DEVS:NetInterfaces/genet, stack-wide ones in
-             ENVARC:netstack.prefs). netinfo shows what the stack ended up
-             with; NetShutdown stops the network again.
+             ENVARC:netstack.prefs). netinfo and ShowNetStatus show what the
+             stack ended up with; NetShutdown stops the network again.
+             To use a Zorro/PCMCIA card or a USB Ethernet adapter instead of
+             the Pi's port, copy SYS:Storage/NetInterfaces/genet into
+             DEVS:NetInterfaces/ under a name of your choosing, set DEVICE=
+             (and UNIT=) to your driver, and remove the genet file - only
+             one interface can be up at a time.
 
-  SANA-II    Point your TCP/IP stack (Roadshow, AmiTCP, Miami) at
-             'genet.device' unit 0 before it can carry network traffic.
+  SANA-II    If you kept your own TCP/IP stack, point it (Roadshow, AmiTCP,
+  + own      Miami) at 'genet.device' unit 0 before it can carry traffic.
+  stack      genet-stats shows the driver's counters.
+
+  netdev     netdev-stats shows the driver's own counters and loss points.
+
+  upgrading  Interface settings from a 2.0 ENVARC:netstack.prefs are ignored
+  from 2.0   now; move them into DEVS:NetInterfaces/genet, which the
+             installer created for you:
+               MODE=STATIC + ADDRESS/NETMASK/GATEWAY  ->  a dotted-quad
+                 ADDRESS= plus NETMASK= (and GATEWAY= if you had one)
+               DEVICE, UNIT, VLAN                     ->  same keys, same
+                 values, just in the interface file
+             DHCP setups need nothing - that is the default. HOSTNAME, DNS1,
+             DNS2, MDNS and NETWORK stay in netstack.prefs and still work.
 
   nvme       nvmeinfo lists the NVMe drives and namespaces that were found;
              nvmeadm reports SMART/health data and log pages.
@@ -255,9 +311,11 @@ REQUIREMENTS
   - USB stack (for xhci.device): Poseidon, distributed separately. The 6.x
     driver needs Poseidon for AmigaOS 6.x; the 5.x driver runs on classic
     Poseidon 4.x and on 6.x alike
-  - Networking (for genet.device): the netdev version uses the bundled
-    bsdsocket.library; the SANA-II version needs a third-party TCP/IP stack
-    such as Roadshow, AmiTCP or Miami
+  - Networking (for genet.device): the netdev version requires the bundled
+    lwip-amiga stack; the SANA-II version works with either that or a
+    third-party stack such as Roadshow, AmiTCP or Miami. The bundled stack
+    needs no genet at all if you connect through an Ethernet-type SANA-II
+    card or USB adapter
 
 
 SOURCE CODE
