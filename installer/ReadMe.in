@@ -123,9 +123,12 @@ genet.device (DEVS:Networks/)
       genet-stats counter tool then installs to C:.
 
 bsdsocket.library @BSDSOCKET_VERSION@ (LIBS:)  [lwip-amiga @LWIP_VERSION@]
-  A modern TCP/IP stack, installed with the netdev Ethernet version. It
-  configures itself over DHCP the first time an application opens it; a fixed
-  address, the hostname and the driver to use live in ENVARC:netstack.prefs.
+  A modern TCP/IP stack, installed with the netdev Ethernet version. Opening
+  it starts the stack (loopback only); the network interface is added at boot
+  by S:Network-Startup running 'AddNetInterface', from the config file
+  DEVS:NetInterfaces/genet (DHCP by default; the file holds a fixed address
+  or VLAN too). Stack-wide settings - hostname, DNS servers, mDNS - live in
+  ENVARC:netstack.prefs.
   Installing it REPLACES any existing bsdsocket.library (yours is backed up to
   bsdsocket.library.orig first).
   It is NOT a SANA-II stack - it talks to network hardware over the new netdev
@@ -138,6 +141,34 @@ netdev-stats, netinfo, mdns (C:)
   Networking tools installed with the netdev version. netdev-stats shows driver
   and interface counters; netinfo reports the address and DNS settings the
   stack ended up with; mdns looks up and announces .local names.
+
+AddNetInterface, RemoveNetInterface, NetShutdown, arp (C:)
+  Roadshow-style network control, installed with the netdev version.
+  AddNetInterface adds interfaces from DEVS:NetInterfaces/ files (blocking
+  until the DHCP lease arrives); RemoveNetInterface takes one down again
+  (FORCE overrides the in-use refusal); NetShutdown stops the whole stack
+  and unloads the library once every network program has quit; Arp displays,
+  sets and deletes ARP table entries (published/proxy entries are not
+  supported).
+
+ping, traceroute (C:)
+  The classic 4.4BSD network diagnostics, installed with the netdev version,
+  with Roadshow-compatible command templates. ping sends ICMP echo requests
+  and reports round-trip times and packet loss; traceroute maps the gateways
+  a packet crosses on its way to a host (ping's RECORDROUTE option is not
+  supported by this stack).
+
+NetLogViewer (C:, with icon)
+  Log viewer, installed with the netdev version: a Commodity
+  that captures every message bsdsocket.library and its clients log
+  (interface and link state, DHCP leases, errors, syslog() output) and shows
+  them in a window with time, origin and severity; the list can be saved to
+  a file. Shift-Alt-F8 (CX_POPKEY) shows the window, Exchange hides and
+  shows it, NetShutdown makes it exit. Start it before AddNetInterface to
+  see the whole bring-up, for example from S:Network-Startup with
+  "Run >NIL: C:NetLogViewer CX_POPUP NO". The icon carries the CX_POPKEY /
+  CX_PRIORITY / CX_POPUP tooltypes and DONOTWAIT, so a copy in WBStartup
+  works too.
 
 nvme.device @NVME_VERSION@ (DEVS:)
   Storage driver for a PCIe-attached NVMe SSD.
@@ -199,10 +230,11 @@ full set is:
              USB host controller in Trident. On Poseidon for AmigaOS 6.x the
              6.x version is the faster one - re-run the installer to switch.
 
-  netdev     bsdsocket.library configures itself over DHCP the first time an
-             application opens it. A fixed address, the hostname and the
-             driver to use live in ENVARC:netstack.prefs; netinfo shows what
-             the stack ended up with.
+  netdev     S:Network-Startup adds the network interface at boot with
+             AddNetInterface (DHCP; per-interface settings live in
+             DEVS:NetInterfaces/genet, stack-wide ones in
+             ENVARC:netstack.prefs). netinfo shows what the stack ended up
+             with; NetShutdown stops the network again.
 
   SANA-II    Point your TCP/IP stack (Roadshow, AmiTCP, Miami) at
              'genet.device' unit 0 before it can carry network traffic.
