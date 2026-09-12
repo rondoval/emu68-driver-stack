@@ -21,8 +21,7 @@
 (set #rangeops-build @RANGEOPS_BUILD@)
 
 ; A system-wide install spread across LIBS:, DEVS: and C:; there is no single
-; application directory.  Point @default-dest at SYS: so the Installer's closing
-; report reads sensibly.
+; application directory.
 (set @default-dest "SYS:")
 
 ; Require Installer v43.3+ (askoptions, askchoice, copylib-style version checking, IN).
@@ -745,3 +744,6 @@
 )
 (set #done-msg (cat #done-msg "\nSee the ReadMe for usage notes."))
 (message #done-msg (all))
+; Quiet exit: running off the end (or a plain (exit)) would add the Installer's
+; own "<APPNAME> can be found in <@default-dest>" report after this summary.
+(exit (quiet))
