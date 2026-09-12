@@ -13,7 +13,7 @@ Components are git submodules under `components/`: `devicetree.resource`, `mailb
 **All builds run inside the toolchain container via `./scripts/docker-build.sh` —
 never invoke `cmake` on the host, and never build a component standalone from its
 own directory.** The shared `build/` tree is configured at `/work` inside the
-container image (`ghcr.io/rondoval/amiga-build-container:latest`, NDK 3.2, ships
+container image (`ghcr.io/rondoval/amiga-build-container:gcc-v16.2`, NDK 3.2, ships
 `lha`), so a host-side `cmake --build build` fails with a CMakeCache path
 mismatch, and reconfiguring on the host would clobber the container cache.
 

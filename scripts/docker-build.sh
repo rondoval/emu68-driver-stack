@@ -3,9 +3,10 @@
 #
 # No local m68k-amigaos toolchain is required: this runs the same image CI uses,
 # which ships the cross-compiler at /opt/m68k-amigaos (a symlink to /opt/amiga in the
-# shared rondoval/amiga-build-container image, built on stefanreinauer/amiga-gcc with
-# NDK 3.2) and the `lha` archiver used by the `package` target.  The image tag lives
-# here and nowhere else, so the wrapper and CI stay in lock-step.
+# shared rondoval/amiga-build-container image — gcc 16.2 + NDK 3.2, built from the
+# sources pinned in that repo's toolchain.lock.json) and the `lha` archiver used by
+# the `package` target.  The image tag lives here and nowhere else, so the wrapper
+# and CI stay in lock-step.
 #
 # Usage:
 #   scripts/docker-build.sh                 # configure + build the whole stack
@@ -19,14 +20,14 @@
 #
 # Any arguments are forwarded to `cmake --build <build dir> <args>`.
 # Environment overrides:
-#   EMU68_BUILD_IMAGE     Toolchain image tag (default: ghcr.io/rondoval/amiga-build-container:latest)
+#   EMU68_BUILD_IMAGE     Toolchain image tag (default: ghcr.io/rondoval/amiga-build-container:gcc-v16.2)
 #   EMU68_CONFIGURE_ARGS  Extra args appended to the `cmake -S . -B <build dir>` configure step
 #   EMU68_BUILD_DIR       CMake build directory, relative to the workspace (default: build)
 #   EMU68_INSTALL_DIR     Install prefix, relative to the workspace (default: install).
 #                         The package's .lha lands in <EMU68_BUILD_DIR>/package/.
 set -euo pipefail
 
-IMAGE=${EMU68_BUILD_IMAGE:-"ghcr.io/rondoval/amiga-build-container:gcc-v16.1"}
+IMAGE=${EMU68_BUILD_IMAGE:-"ghcr.io/rondoval/amiga-build-container:gcc-v16.2"}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STACK_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
@@ -37,9 +38,9 @@ fi
 
 # Outputs are written back to the mounted workspace; -u keeps them host-owned
 # (not root).  HOME=/tmp gives the arbitrary uid a writable home for tool caches.
-# The explicit -DCMAKE_INSTALL_PREFIX=/work/install pins the install tree to the
-# mounted workspace: the image's CMAKE_TOOLCHAIN_FILE env otherwise defaults the
-# prefix into the root-owned toolchain sysroot, which a non-root build can't write.
+# The explicit -DCMAKE_INSTALL_PREFIX=/work/<install dir> pins the install tree to the
+# mounted workspace (host-visible, and writable by the non-root uid) and is what makes
+# EMU68_INSTALL_DIR work.
 # Note: a build/ tree is tied to its prefix path (/work here) — do not share one
 # build directory between docker and a native /opt/m68k-amigaos build; rm -rf build
 # when switching.
