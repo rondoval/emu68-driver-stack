@@ -8,7 +8,7 @@ explicitly excludes this drawer from the archive.
 
 | Output (committed) | From | Kind |
 |---|---|---|
-| `installer/Install.info` | `Install.png` + `Install.info.src` | project (`DefaultTool = SYS:Utilities/Installer`), ColorIcon + classic fallback |
+| `installer/Install.info` | `Install.png` + `Install.info.src` | project (`DefaultTool = SYS:Utilities/Installer`, ToolTypes `APPNAME` / `MINUSER` / `DEFUSER`), ColorIcon + classic fallback |
 
 `make_icons.py` drives the icontool fork, one invocation per icon — `--create`
 synthesises the DiskObject, the imports supply the art, and the tooltype
@@ -19,7 +19,10 @@ for value tooltypes. Same format as
 
 `Install.info` must be a **project** icon carrying a DefaultTool: that is what
 lets a user double-click `Install` and have Workbench start the Commodore
-Installer on it. 
+Installer on it. Its `APPNAME` tooltype names the product on the Installer's
+welcome screens; without it the Installer shows a placeholder ("Test").
+Regenerating needs an icontool that accepts tooltypes on project icons (older
+builds of the fork silently dropped them).
 
 ## Regenerating
 
