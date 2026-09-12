@@ -65,14 +65,14 @@ jobs:
 
     steps:
       - name: Download packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: package-*
           path: packages
           merge-multiple: true
 
       - name: Download release body
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: release-body
           path: notes
