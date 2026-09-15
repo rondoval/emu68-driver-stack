@@ -269,7 +269,7 @@
 ;                - so this answer settles the TCP/IP question below.
 ;   SANA-II 3.x  the classic driver, usable by any TCP/IP stack - including the
 ;                bundled one, which drives Ethernet-type SANA-II devices since
-;                lwip-amiga 1.4.
+;                lwip-amiga 1.5.
 ; ---------------------------------------------------------------------------
 (if (= @user-level 0)
     (set #genet-choice 0)                    ; NOVICE: netdev genet
