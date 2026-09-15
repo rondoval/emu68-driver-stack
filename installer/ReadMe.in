@@ -41,7 +41,7 @@ which gets you close to gigabit line rate. USB is a separate, independent
 question: it depends only on which Poseidon you run.
 
 The installer asks two separate questions - which genet.device, and which
-TCP/IP stack. They are independent now: since its 1.4 release the bundled
+TCP/IP stack. They are independent now: since its 1.5 release the bundled
 lwip-amiga stack drives classic SANA-II Ethernet drivers as well as the
 netdev one, so the SANA-II genet works with either stack.
 
@@ -136,7 +136,7 @@ genet.device (DEVS:Networks/)
 
     SANA-II @GENET_SANA2_VERSION@  the classic driver. Works with a third-party
       stack (Roadshow, AmiTCP, Miami) AND with the bundled one, which has
-      driven Ethernet SANA-II devices since lwip-amiga 1.4 - slower than
+      driven Ethernet SANA-II devices since lwip-amiga 1.5 - slower than
       netdev either way. It rides in the archive under Storage/ and is
       installed to DEVS:Networks/ only if you choose it; its genet-stats
       counter tool then installs to C:.
@@ -156,8 +156,12 @@ lwip-amiga @LWIP_VERSION@ (LIBS:bsdsocket.library @BSDSOCKET_VERSION@)
   Besides the netdev genet it also drives classic Ethernet-type SANA-II
   drivers - a Zorro or PCMCIA card, a USB Ethernet adapter - which it detects
   automatically; write a file for one by copying the commented sample from
-  SYS:Storage/NetInterfaces/genet and editing DEVICE=. Non-Ethernet SANA-II
-  (PPP, SLIP, Token Ring, ArcNet) is not supported.
+  SYS:Storage/NetInterfaces/genet and editing DEVICE=. Interface files from
+  Roadshow work unchanged, but Roadshow keeps a fixed address's router and
+  DNS servers in DEVS:Internet, which this stack does not read: add GATEWAY=
+  to the interface file and DNS1=/DNS2= to ENVARC:netstack.prefs. DHCP needs
+  neither. Non-Ethernet SANA-II (PPP, SLIP, Token Ring, ArcNet) is not
+  supported.
   ONE interface at a time: besides loopback the stack carries a single
   interface, so a second AddNetInterface is refused. If DEVS:NetInterfaces/
   holds more than one file the boot line picks the highest PRI= tooltype and

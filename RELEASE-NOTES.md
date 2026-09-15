@@ -59,7 +59,7 @@ carries and are unaffected.
 | `genet.device` (4.x, netdev) | **4.2** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v4.2/RELEASE-NOTES.md) |
 | `genet.device` (3.x, SANA-II) | **3.15** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.15/RELEASE-NOTES.md) |
 | `nvme.device` | **1.5** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.5/RELEASE-NOTES.md) |
-| lwip-amiga (TCP/IP stack) | **1.4** — ships `bsdsocket.library` **4.104** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.4/RELEASE-NOTES.md) |
+| lwip-amiga (TCP/IP stack) | **1.5** — ships `bsdsocket.library` **4.105** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.5/RELEASE-NOTES.md) |
 
 ---
 
@@ -78,10 +78,15 @@ roughly 290/300 Mb/s against it rather than the netdev numbers.
 
 Network control is now Roadshow-shaped. `AddNetInterface` brings interfaces up
 from `DEVS:NetInterfaces/` files and blocks until they are actually usable —
-link up, DHCP lease bound; `RemoveNetInterface` takes one down again; and
-`NetShutdown` stops the whole stack, waits for network programs to quit, and
-unloads the library. `arp` displays, sets and deletes ARP entries, with the
-classic `SIOCSARP`/`SIOCGARP`/`SIOCDARP` `IoctlSocket()` requests behind it.
+link up, DHCP lease bound. It reads **Roadshow's interface files unchanged**
+(options that only tune Roadshow are accepted and ignored, unsupported ones 
+are warned about; a fixed address needs `GATEWAY=` added, as the stack does
+not read `DEVS:Internet`), finds a bare driver name in `DEVS:Networks/`,
+and honours `HARDWAREADDRESS` to set the MAC address; `RemoveNetInterface`
+takes one down again; and `NetShutdown` stops the whole stack, waits for
+network programs to quit, and unloads the library. `arp` displays, sets and
+deletes ARP entries, with the classic `SIOCSARP`/`SIOCGARP`/`SIOCDARP`
+`IoctlSocket()` requests behind it.
 `ping` and `traceroute` arrive with Roadshow-compatible templates, and
 `setsockopt(IP_HDRINCL)` now works for raw sockets. `GetNetStatus` and
 `ShowNetStatus` answer the Roadshow status query.
@@ -104,7 +109,7 @@ naming: UDP `connect()` now commits the local address the BSD way, so
 connecting toward a destination with no route fails with `ENETUNREACH` instead
 of appearing to succeed.
 
-See the [component notes](https://github.com/rondoval/lwip-amiga/blob/v1.4/RELEASE-NOTES.md)
+See the [component notes](https://github.com/rondoval/lwip-amiga/blob/v1.5/RELEASE-NOTES.md)
 for the full list, including the interface-file format.
 
 ### Boot from USB or NVMe in a custom Kickstart ROM

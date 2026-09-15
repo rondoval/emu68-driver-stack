@@ -83,10 +83,12 @@ Roadshow, AmiTCP and Miami stop working — and it installs its own `ping`,
 `traceroute`, `arp`, `AddNetInterface`, `RemoveNetInterface`, `NetShutdown`,
 `GetNetStatus` and `ShowNetStatus` into `C:`, over the Roadshow commands of
 those names.
-Your SANA-II Ethernet *hardware* keeps working, though: since lwip-amiga 1.4 the
+Your SANA-II Ethernet *hardware* keeps working, though: since lwip-amiga 1.5 the
 bundled stack drives Ethernet-type SANA-II drivers itself, so a Zorro or PCMCIA
 card or a USB Ethernet adapter just gets described in a `DEVS:NetInterfaces/`
-file. What it cannot drive is non-Ethernet SANA-II — PPP and SLIP dial-up,
+file — and Roadshow's interface files are read as they are (a fixed address needs
+`GATEWAY=` added, since Roadshow keeps the router in `DEVS:Internet/routes`). What it
+cannot drive is non-Ethernet SANA-II — PPP and SLIP dial-up,
 Token Ring, ArcNet. And it carries **one interface at a time** besides
 loopback, so it is the Pi's port or your card, not both.
 

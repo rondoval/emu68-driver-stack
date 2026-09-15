@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 2.1.0 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.1.1 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -455,7 +455,7 @@ Which one to take:
   custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x    bundled    6.x
 
 'any' = your existing Roadshow/AmiTCP/Miami, or the bundled bsdsocket.library:
-since lwip-amiga 1.4 the bundled stack drives Ethernet-type SANA-II drivers as
+since lwip-amiga 1.5 the bundled stack drives Ethernet-type SANA-II drivers as
 well as the netdev one, so the driver and the stack are separate choices and
 the installer asks them separately. The stack carries one interface at a time
 besides loopback.
