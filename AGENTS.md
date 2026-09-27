@@ -51,10 +51,14 @@ zero warnings before reporting the task done.
 `EMU68_DEBUG_BACKEND` (default `pistorm`) selects the debug sink for the whole
 stack, propagated to every component:
 
-- `pistorm` — `RawDoFmt` → magic `0xdeadbeef` (Emu68 trap). ROM-able.
-- `serial`  — `debug.lib` `KPutChar` → AmigaOS serial console @ 9600. **Not**
-  ROM-able (links a 4-byte `_SysBase` `.bss`).
+- `pistorm` — magic `0xdeadbeef` (Emu68 trap). ROM-able.
+- `serial`  — Exec `RawPutChar`, the `kprintf` path: serial port, or whatever
+  redirects it (Sashimi). ROM-able.
 - `off`     — debug compiled out (smallest binaries).
+
+Both sinks format with emu68-common's `fmt_vformat` (C argument rules — `%d` is
+32-bit, no `l` needed — and no Exec call). The serial sink is the one place that
+takes `SysBase` from address 4 — debug printing has no context to carry it.
 
 Mechanism lives in `emu68-common` (`include/debug.h` + the shared
 `cmake/Emu68CommonDebug.cmake` module) — see that component's own docs.
@@ -124,21 +128,31 @@ address, so free it only with `dma_free` — never `dma_pool_region_free` or
 
 ### Mandatory include pattern for every driver `.c` file
 
-Every `.c` file that uses Exec or the `memory.h` inline functions must open with:
+Never read the Exec base from address 4: on PiStorm that is an Amiga-bus cycle
+(~1.5 µs) per Exec call. Every `.c` file opens, before any include, with:
 
 ```c
-#ifdef __INTELLISENSE__
-#include <clib/exec_protos.h>
-#else
 #define __NOLIBBASE__
-#define EXEC_BASE_NAME (*(struct ExecBase **)4UL)
-#include <proto/exec.h>
-#endif
+#define EXEC_BASE_NAME SysBase /* a local in every function, from its context's sysBase */
 ```
 
-The `__INTELLISENSE__` guard lets IDEs resolve symbols without the
-Bebbo-specific `proto/exec.h` magic. Omitting `proto/exec.h` causes
-`AllocPooled`/`FreePooled` implicit-declaration warnings when `memory.h` is included.
+and every function that calls Exec — `pool_*`, `cache_pre_dma`/`cache_post_dma`
+and other emu68-common macros included — starts with
+`struct ExecBase *SysBase = p->sysBase;`, where `p` is one of its own
+parameters. The base is stored once, from the init function's a6, in the device
+or library base, and copied into each context struct when it is created (unit,
+controller, ring, request, …), so reaching it is always one hop. Interrupt
+servers and init functions name their a6 parameter `SysBase`. A header
+`static inline` that calls Exec does the same from its own context parameter
+(an inline body sees no caller locals, but every includer binds `SysBase`).
+
+`__NOLIBBASE__` must come first: without it `proto/exec.h` declares a global
+`SysBase`, and a missing local compiles silently against it (it then fails only
+at link time, as these targets have no such symbol).
+
+The rule is a review rule, not a build-enforced one. Only a handful of places
+may read address 4, each for a stated reason: the serial debug sink and the
+nvme mounter's boot point.
 
 ### Compiler warning flags
 

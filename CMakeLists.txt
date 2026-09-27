@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 2.1.1 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.2.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -32,8 +32,8 @@ if(EMU68_TOOLCHAIN_ARGS)
 endif()
 
 # Debug-output backend (sink) for the whole stack (see emu68-common/include/debug.h):
-#   pistorm (default) - RawDoFmt -> magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
-#   serial            - debug.lib KPrintF -> console (serial @ 9600). Not ROM-able.
+#   pistorm (default) - magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
+#   serial            - Exec RawPutChar (the kprintf path; Sashimi sees it). ROM-able.
 #   off               - no sink; the whole stack is silent whatever the tiers say.
 # Propagated to every component below so a single backend is used consistently.
 set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
