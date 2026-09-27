@@ -8,7 +8,7 @@ explicitly excludes this drawer from the archive.
 
 | Output (committed) | From | Kind |
 |---|---|---|
-| `installer/Install.info` | `Install.png` + `Install.info.src` | project (`DefaultTool = SYS:Utilities/Installer`, ToolTypes `APPNAME` / `MINUSER` / `DEFUSER`), ColorIcon + classic fallback |
+| `installer/Install.info` | `Install.png` + `Install.info.src` | project (`DefaultTool = SYS:System/Installer`, ToolTypes `APPNAME` / `MINUSER` / `DEFUSER`), ColorIcon + classic fallback |
 
 `make_icons.py` drives the icontool fork, one invocation per icon — `--create`
 synthesises the DiskObject, the imports supply the art, and the tooltype
