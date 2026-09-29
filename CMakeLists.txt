@@ -36,6 +36,8 @@ endif()
 #   serial            - Exec RawPutChar (the kprintf path; Sashimi sees it). ROM-able.
 #   off               - no sink; the whole stack is silent whatever the tiers say.
 # Propagated to every component below so a single backend is used consistently.
+option(EMU68_LTO "Build the drivers with GCC link-time optimization" ON)
+
 set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
 set_property(CACHE EMU68_DEBUG_BACKEND PROPERTY STRINGS pistorm serial off)
 
@@ -229,6 +231,16 @@ function(add_stack_project target source_dir)
         set(_cache_ops_args -DEMU68_FORCE_LVO_CACHE_OPS:BOOL=${EMU68_FORCE_LVO_CACHE_OPS})
     endif()
 
+    # Link-time optimization.  Forwarded with an explicit value (like the debug backend,
+    # unlike the DEFINED-guarded TOOLCHAIN_* knobs) so the whole stack is built one way.
+    # devicetree.resource/mailbox.resource are not in the list: they are standalone
+    # projects that never find_package(Emu68Common), so passing it would only trip
+    # CMake's "unused variable" warning.
+    set(_lto_args "")
+    if(target IN_LIST EMU68_DEBUG_COMPONENTS)
+        set(_lto_args -DEMU68_LTO:BOOL=${EMU68_LTO})
+    endif()
+
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
@@ -240,6 +252,7 @@ function(add_stack_project target source_dir)
             ${EMU68_TOOLCHAIN_ARGS}
             ${_debug_args}
             ${_cache_ops_args}
+            ${_lto_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
         DEPENDS ${STACK_DEPENDS}

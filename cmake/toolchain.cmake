@@ -67,7 +67,12 @@ set(LIBNIX_SWAPSTACK_O ${TOOLCHAIN_PATH}/m68k-amigaos/libnix/lib/swapstack.o)
 # stack-wide) as near-null out-of-bounds accesses. False positive, not
 # scopeable via pragma (the warning fires at each call site, not at the
 # macro definition), so it's disabled toolchain-wide instead.
-set(FLAGS_COMMON "${TOOLCHAIN_COMMON} -m${M68K_CPU} -m${M68K_FPU}-float -fomit-frame-pointer -mcrt=${M68K_CRT} -Wno-array-bounds")
+#
+# -D__NO_INLINE__ turns off the inline definitions in libnix's <string.h> (strsup.h:
+# memmove, memcmp, memchr, strlen, strcpy, strlcpy, stpcpy, mempcpy).  Any TU that
+# includes that header otherwise gets libnix's versions compiled straight in.  With
+# the inlines off every call goes to a real symbol, which resolves to emu68-common.
+set(FLAGS_COMMON "${TOOLCHAIN_COMMON} -m${M68K_CPU} -m${M68K_FPU}-float -fomit-frame-pointer -mcrt=${M68K_CRT} -Wno-array-bounds -D__NO_INLINE__")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${FLAGS_COMMON} ${TOOLCHAIN_CFLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAGS_COMMON} ${TOOLCHAIN_CXXFLAGS}")
 set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -m${M68K_CPU} -I${TOOLCHAIN_PATH}/m68k-amigaos/sys-include")
