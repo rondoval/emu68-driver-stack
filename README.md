@@ -27,8 +27,8 @@ storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x.
   SANA-II hardware — a Zorro or PCMCIA card, a USB Ethernet adapter — so it is
   not tied to the Pi's own port; one interface at a time. Comes with `netinfo`,
   `netdev-stats`, `mdns`, `ping`, `traceroute`, `arp`, the Roadshow-style
-  `AddNetInterface` / `RemoveNetInterface` / `NetShutdown` commands and the
-  `NetLogViewer` commodity.
+  `AddNetInterface` / `RemoveNetInterface` / `NetShutdown` commands, the
+  `NetLogViewer` commodity and the `NetSpeed` throughput monitor.
 - **Storage** — `nvme.device` drives an NVMe SSD attached to the PCIe slot, with
   the `nvmeinfo` and `nvmeadm` tools for health and SMART data.
 - **Supporting libraries** — `gic400.library` and `bcmpcie.library`, which the

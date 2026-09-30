@@ -1,3 +1,145 @@
+# Release notes — Emu68 driver stack 2.2.0
+
+Changes since 2.1.1. Network replies come back twice as fast, the network
+keeps its speed on a busy machine, and USB, NVMe and PCIe interrupts cost
+less. There is a new `NetSpeed` throughput monitor, and bug fixes across the
+drivers.
+
+Read *Before you upgrade* first: the 6.3 USB driver needs Poseidon 6.2, and
+some `genet.device` settings changed.
+
+---
+
+## Before you upgrade
+
+- **`xhci.device` 6.3 needs Poseidon for AmigaOS 6.2.** Update Poseidon at the
+  same time. With an older Poseidon 6.x, a USB device can hang after an
+  endpoint stall. The 5.x driver for classic Poseidon 4.x is not affected.
+- **Update `bsdsocket.library` and `genet.device` together.** The faster
+  replies need both. A mixed pair works, just without that gain.
+- **`genet.device` runs at task priority 15** (both the netdev and the SANA-II
+  driver). If you set `UNIT_TASK_PRIORITY` in `genet.prefs` yourself, your value
+  still applies; remove the line to get the new default. Values are now limited
+  to 6–19.
+- **Six netdev `genet.device` settings are gone:** `RX_COALESCE_USECS`,
+  `RX_COALESCE_FRAMES`, `TX_COALESCE_FRAMES`, `PERIODIC_TASK_MS`,
+  `LINK_POLL_MS`, `UNIT_STACK_SIZE`. Left in `genet.prefs` they are ignored, so
+  nothing breaks. The stack now sets interrupt timing by itself; to fix it by
+  hand, use `netdev-stats RXUSECS <n> RXFRAMES <n> TXFRAMES <n>` (takes effect
+  at once, no reboot), and `RXUSECS 0 RXFRAMES 0` hands control back.
+
+---
+
+## Component versions in this release
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `emu68-common` (support library) | **2.0.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v2.0.0/RELEASE-NOTES.md) |
+| `gic400.library` | **1.9** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.9/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.5** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.5/RELEASE-NOTES.md) |
+| `openpci.library` | **45.13** | bundled with `bcmpcie.library` |
+| `xhci.device` (6.x) | **6.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.3/RELEASE-NOTES.md) |
+| `xhci.device` (5.x) | **5.5** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.5/RELEASE-NOTES.md) |
+| `genet.device` (4.x, netdev) | **4.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v4.3/RELEASE-NOTES.md) |
+| `genet.device` (3.x, SANA-II) | **3.16** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.16/RELEASE-NOTES.md) |
+| `nvme.device` | **1.6** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.6/RELEASE-NOTES.md) |
+| lwip-amiga (TCP/IP stack) | **1.6** — ships `bsdsocket.library` **4.106** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.6/RELEASE-NOTES.md) |
+
+---
+
+## What changed
+
+### Networking
+
+- **Replies come back twice as fast.** A one-byte request and one-byte reply
+  takes **501 µs** (2.1.1: 993 µs). File shares (SMB, NFS), `ssh` and running
+  programs off a share all benefit. The stack tells `genet.device` when a
+  program is waiting for a reply, and the driver hands over incoming packets at
+  once; busy downloads are still batched and keep their speed. Nothing to
+  configure.
+- **Less CPU per packet** in both `genet.device` drivers, sending and receiving.
+- **`NetSpeed`**, a new window showing throughput in both directions, link
+  speed and a graph of the last few minutes, for any interface. Settings are in
+  its menu and can be saved. Installed to `C:` with an icon; start it from
+  Workbench or with `Run >NIL: C:NetSpeed`.
+- **SANA-II:** faster transfers. Large UDP datagrams are sent complete or not at
+  all, and with `genet.device` 3.16 a 64 KB datagram goes out at wire speed.
+- **Fixed:** a crash when a connection arrived while a listening socket was
+  being handed from one program to another.
+
+### `genet.device` 3.16 (SANA-II) fixes
+
+- `Offline` followed by `Online` no longer crashes or leaks memory, and a failed
+  `Online` can be retried.
+- Correct received data after a warm reboot from the netdev driver or Linux.
+- A gigabit link no longer comes up unable to send after the netdev driver has
+  run.
+- A write that finds the transmit queue full waits instead of failing, so fast
+  senders no longer lose packets. A write larger than 2028 bytes fails with
+  `S2ERR_MTU_EXCEEDED` instead of corrupting memory.
+- Going offline while another program is sending no longer crashes.
+- A declined packet filter no longer loses the waiting read request;
+  `S2EVENT_CONFIGCHANGED` is accepted.
+
+### USB
+
+- **Cheaper interrupts** with MSI and MSI-X, in both the 6.x and 5.x driver.
+- **6.x:** Poseidon 6.2 now clears halted endpoints itself, including for
+  classes that never did, and USB transfer errors are reported precisely so
+  it can recover the device.
+- **6.x:** one bad packet on an audio or video stream no longer stops the whole
+  stream.
+- **6.x:** transfers no longer get lost or time out after a class resets an
+  endpoint — for example a mass-storage reset, a printer reset, or opening some
+  USB serial adapters.
+- **Both:** a request for a root-hub port that does not exist no longer crashes.
+
+### NVMe
+
+- Less work per command and faster data copies.
+- MSI-X interrupts are handled as the NVMe specification requires.
+- **Custom Kickstart:** `nvme.device` reports its correct size to the ROM scan,
+  so `build-kickstart.sh` shows the right free space.
+
+### PCIe and interrupts
+
+- **`gic400.library`** handles all pending interrupts in one pass, making every
+  driver's interrupts cheaper.
+- **`bcmpcie.library`** masks MSI and MSI-X inside the Pi's PCIe controller,
+  which is what makes the USB and NVMe interrupts cheaper.
+- **Fixed:** masking an INTx interrupt now works, so a removed interrupt server
+  can no longer leave its device interrupting.
+- **Fixed:** a possible crash at boot if memory runs out while scanning the PCIe
+  bus.
+- **Fixed:** a message for an MSI vector that has no server attached no longer
+  raises an interrupt nobody handles.
+- Interrupt servers may use register `A5`, as Exec allows.
+- **For developers:** `bcmpcie.library` 2.5 and `emu68-common` 2.0.0 change some
+  API behaviour; see their release notes.
+
+### Installation
+
+- The `Install` icon now opens `SYS:System/Installer`, where AmigaOS 3.2 keeps
+  it.
+- Every module is built with link-time optimization. The modules for a custom
+  Kickstart take slightly less room in total.
+
+---
+
+## Known limitations
+
+- One network interface at a time besides loopback.
+- Non-Ethernet SANA-II drivers (PPP, SLIP, Token Ring, ArcNet) are not
+  supported.
+- `ping RECORDROUTE`, published/proxy `arp` entries and Roadshow's
+  `SBTC_LOG_FILE_NAME` are not implemented.
+- The receive mode is chosen per interface, not per connection: a machine that
+  downloads and answers requests at the same time gets one setting for both.
+- Two PCIe devices that share one INTx line: only the first can use INTx. MSI
+  and MSI-X are not affected.
+
+---
+
 # Release notes — Emu68 driver stack 2.1.0
 
 Changes since 2.0.0. The TCP/IP stack stops being tied to the Pi's own Ethernet
