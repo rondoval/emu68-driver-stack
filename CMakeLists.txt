@@ -41,6 +41,13 @@ option(EMU68_LTO "Build the drivers with GCC link-time optimization" ON)
 set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
 set_property(CACHE EMU68_DEBUG_BACKEND PROPERTY STRINGS pistorm serial off)
 
+# Local-build marker.  build.sh sets it, once per run, to
+# dev-<YYYYMMDD>-<HHMMSS>-g<hash>[-dirty]; it is forwarded to every component (which
+# appends it to its $VER date, so every device, library and tool carries it) and it
+# names the .lha and heads its ReadMe/Installer text.  Releases come from CI, which
+# never sets it: empty means release and leaves every output exactly as before.
+set(EMU68_BUILD_STAMP "" CACHE STRING "Local-build marker (build.sh sets it); empty = release")
+
 # Debug tier - what a component emits through that sink (see the ladder in
 # emu68-common/cmake/Emu68CommonDebug.cmake):
 #   off | profile (timing only) | debug (asserts + logging) | trace (verbose)
@@ -241,6 +248,14 @@ function(add_stack_project target source_dir)
         set(_lto_args -DEMU68_LTO:BOOL=${EMU68_LTO})
     endif()
 
+    # Local-build stamp, into the $VER of everything a component ships (same component
+    # set as LTO: devicetree/mailbox are not shipped and stamp their own git hash).
+    # A new stamp changes the configure command, so every component reconfigures.
+    set(_stamp_args "")
+    if(target IN_LIST EMU68_DEBUG_COMPONENTS)
+        set(_stamp_args -DEMU68_BUILD_STAMP:STRING=${EMU68_BUILD_STAMP})
+    endif()
+
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
@@ -253,6 +268,7 @@ function(add_stack_project target source_dir)
             ${_debug_args}
             ${_cache_ops_args}
             ${_lto_args}
+            ${_stamp_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
         DEPENDS ${STACK_DEPENDS}
@@ -406,6 +422,17 @@ if(NOT EMU68_DEBUG_BACKEND STREQUAL "off")
     if(NOT _seen_components STREQUAL "" OR NOT _all_list STREQUAL "")
         string(APPEND PACKAGE_SUFFIX "-mixed")
     endif()
+endif()
+# A local build carries its stamp last, so a workstation archive can never pass for a
+# release one, and two of them never collide.  The ReadMe gets a banner and the
+# Installer's welcome text shows it next to the version.
+set(PACKAGE_VERSION_DISPLAY "${PACKAGE_VERSION}")
+set(BUILD_NOTICE "")
+if(EMU68_BUILD_STAMP)
+    string(APPEND PACKAGE_SUFFIX "-${EMU68_BUILD_STAMP}")
+    string(APPEND PACKAGE_VERSION_DISPLAY " ${EMU68_BUILD_STAMP}")
+    set(BUILD_NOTICE
+        "*** LOCAL DEVELOPMENT BUILD ${EMU68_BUILD_STAMP}\n*** Not an official release.\n\n")
 endif()
 
 set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}${PACKAGE_SUFFIX}")

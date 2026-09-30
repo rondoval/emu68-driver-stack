@@ -1,6 +1,6 @@
 emu68 Driver Stack @PACKAGE_VERSION@
 ========================
-AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
+@BUILD_NOTICE@AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
 
 *** UPGRADING FROM 2.0? Two things can change how your machine comes up.
 *** Network interfaces are no longer configured in ENVARC:netstack.prefs -

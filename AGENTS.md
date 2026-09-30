@@ -163,6 +163,59 @@ All components are built with `-Wall -Wconversion -Wsign-conversion -Wshadow
 - Every non-`static` function needs a visible prototype at its definition site (include the relevant header in the `.c` file).
 - Functions with no parameters must be declared `f(void)`.
 
+### Module layout and LTO
+
+Two per-target calls that look like flags but are not, so they do not break the "state a flag at
+exactly one level" rule:
+
+- `emu68_module_layout(<target> [WRITABLE])` links the module through
+  `components/emu68-common/ldscripts/module.lds`. That script is the module contract:
+  `.text.entry` (the `doNotExecute` stub, which `LoadSeg()` runs at offset 0) and `.text.modhdr`
+  (the romtag) are placed first, `_endOfCode` is defined at the true end of `.text` so
+  `RT_ENDSKIP` bounds the whole module, and a link-time `ASSERT` rejects any writable section.
+  Pin the stub and the romtag with `__attribute__((used, section(".text.entry")))` /
+  `(".text.modhdr")`. The stub is checked to be `moveq #-1,d0; rts` and there is no way to
+  waive that, so a stub that wants to do more must still start with the `moveq`. `used` is load-bearing and `ENTRY()` is **not** a substitute: it is not an
+  LTO root, and without it the plugin discards the whole module and still emits a valid, empty
+  HUNK file. Pass `WRITABLE` only for a module that is never placed in ROM.
+- `emu68_enable_lto(<target>)` sets CMake's `INTERPROCEDURAL_OPTIMIZATION` property. **Never write
+  `-flto` by hand.** A TU whose payload is file-scope `asm()` must opt out with
+  `emu68_lto_keep_real_objects(<t> <src>…)`: LTO's symbol table cannot see a symbol defined only
+  inside an asm string, so the definition is silently dropped and the link fails with an undefined
+  reference (verified, not assumed), and which partition it would land in is unspecified.
+  Two rules before reaching for it:
+  **(1) Should it be a `.c` at all?** Only if the asm needs the C compiler — `offsetof()` fed
+  through `"i"` operands. Without those, write it as `.S`: assembly never enters LTO, so there is
+  no exception to state. `gic400_dispatch.c` and genet-sana2's `bcmgenet-isr.c` need C;
+  `mounter/bootpoint.S` did not, and converting it removed poseidon's last exception outright.
+  **(2) Is the file the asm block and nothing else?** A TU that opts out takes everything in it
+  out, so split the block off rather than excluding the file it grew up in.
+  (`emu68-common`'s `memory.c` opts out for its own reason; see its `CMakeLists.txt`.) An
+  interrupt server is **not** a reason to opt out.
+- An Exec interrupt server is marked `EMU68_INTSERVER(<name>)` (`<intserver.h>`), which gives it a
+  `.text.isr.<name>` section of its own, and named in `emu68_isr_z_check(<t> SERVERS <name>…)`.
+  The check slices the server out of the **linked** module — the map gives a section's address and
+  size whatever the symbol's linkage, where HUNK has no symbols and most servers are `static` — and
+  fails the build if any exit path leaves Z from something other than D0, if the server tail-calls
+  out of itself, or if a server ships undeclared. It therefore checks the bytes that ship, with LTO
+  on or off. A server written in file-scope `asm()` says `.section .text.isr.<name>,"ax"` itself,
+  and must hand `.text` back at the end: GCC emits a top-level `asm()` before any function body and
+  tracks the current section itself, so without that the rest of the TU lands in the server's
+  section.
+- **GCC synthesises `memcpy`/`memset`/`memmove`/`memcmp` calls during *ltrans* codegen**, after
+  the IR phase has ended. `ld` can still satisfy such a late reference out of `libcommon.a` — the
+  bsdsocket map shows all three pulled by an `ltransN.ltrans.o`, not by anything in the IR — but
+  only when the archive member is a **real object**, because an IR member can no longer be
+  compiled by then. That is the whole reason `emu68-common/src/memory.c` is `-fno-lto` and why its
+  assembly siblings `memcpy_movem.S`/`memset_movem.S` never needed anything: tested both ways on
+  gcc 16.2, LTO'ing `memory.c` ends in `undefined reference to memcmp`, and
+  `__attribute__((used))` does **not** fix it — the body is not being dropped, the member cannot
+  be codegen'd.
+
+`EMU68_LTO` defaults to ON and is forwarded to every component. A native `/opt/m68k-amigaos` build
+cannot do LTO — its binutils was configured `--disable-plugins`, so any LTO object inside a `.a`
+becomes an undefined reference; `check_ipo_supported()` detects that and warns rather than failing.
+
 ## Output Layout
 
 See [*Output layout*](DEVELOPING.md#output-layout) — the single source. Two
