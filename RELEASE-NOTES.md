@@ -98,6 +98,8 @@ some `genet.device` settings changed.
 
 - Less work per command and faster data copies.
 - MSI-X interrupts are handled as the NVMe specification requires.
+- **Fixed:** with legacy INTx interrupts, some controllers (Realtek 10ec:5765)
+  froze the machine on the first read or write.
 - **Custom Kickstart:** `nvme.device` reports its correct size to the ROM scan,
   so `build-kickstart.sh` shows the right free space.
 
@@ -107,6 +109,8 @@ some `genet.device` settings changed.
   driver's interrupts cheaper.
 - **`bcmpcie.library`** masks MSI and MSI-X inside the Pi's PCIe controller,
   which is what makes the USB and NVMe interrupts cheaper.
+- **Fixed:** PCIe devices now work on a CM4 with 4 GB of RAM or more. No device
+  could transfer data there, so an NVMe drive never came up.
 - **Fixed:** masking an INTx interrupt now works, so a removed interrupt server
   can no longer leave its device interrupting.
 - **Fixed:** a possible crash at boot if memory runs out while scanning the PCIe
