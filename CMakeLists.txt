@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 2.1.1 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.2.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -32,12 +32,21 @@ if(EMU68_TOOLCHAIN_ARGS)
 endif()
 
 # Debug-output backend (sink) for the whole stack (see emu68-common/include/debug.h):
-#   pistorm (default) - RawDoFmt -> magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
-#   serial            - debug.lib KPrintF -> console (serial @ 9600). Not ROM-able.
+#   pistorm (default) - magic 0xdeadbeef trap (Emu68/PiStorm). ROM-able.
+#   serial            - Exec RawPutChar (the kprintf path; Sashimi sees it). ROM-able.
 #   off               - no sink; the whole stack is silent whatever the tiers say.
 # Propagated to every component below so a single backend is used consistently.
+option(EMU68_LTO "Build the drivers with GCC link-time optimization" ON)
+
 set(EMU68_DEBUG_BACKEND "pistorm" CACHE STRING "Debug output backend: pistorm | serial | off")
 set_property(CACHE EMU68_DEBUG_BACKEND PROPERTY STRINGS pistorm serial off)
+
+# Local-build marker.  build.sh sets it, once per run, to
+# dev-<YYYYMMDD>-<HHMMSS>-g<hash>[-dirty]; it is forwarded to every component (which
+# appends it to its $VER date, so every device, library and tool carries it) and it
+# names the .lha and heads its ReadMe/Installer text.  Releases come from CI, which
+# never sets it: empty means release and leaves every output exactly as before.
+set(EMU68_BUILD_STAMP "" CACHE STRING "Local-build marker (build.sh sets it); empty = release")
 
 # Debug tier - what a component emits through that sink (see the ladder in
 # emu68-common/cmake/Emu68CommonDebug.cmake):
@@ -229,6 +238,24 @@ function(add_stack_project target source_dir)
         set(_cache_ops_args -DEMU68_FORCE_LVO_CACHE_OPS:BOOL=${EMU68_FORCE_LVO_CACHE_OPS})
     endif()
 
+    # Link-time optimization.  Forwarded with an explicit value (like the debug backend,
+    # unlike the DEFINED-guarded TOOLCHAIN_* knobs) so the whole stack is built one way.
+    # devicetree.resource/mailbox.resource are not in the list: they are standalone
+    # projects that never find_package(Emu68Common), so passing it would only trip
+    # CMake's "unused variable" warning.
+    set(_lto_args "")
+    if(target IN_LIST EMU68_DEBUG_COMPONENTS)
+        set(_lto_args -DEMU68_LTO:BOOL=${EMU68_LTO})
+    endif()
+
+    # Local-build stamp, into the $VER of everything a component ships (same component
+    # set as LTO: devicetree/mailbox are not shipped and stamp their own git hash).
+    # A new stamp changes the configure command, so every component reconfigures.
+    set(_stamp_args "")
+    if(target IN_LIST EMU68_DEBUG_COMPONENTS)
+        set(_stamp_args -DEMU68_BUILD_STAMP:STRING=${EMU68_BUILD_STAMP})
+    endif()
+
     ExternalProject_Add(${target}
         SOURCE_DIR "${source_dir}"
         BINARY_DIR "${CMAKE_BINARY_DIR}/${target}"
@@ -240,6 +267,8 @@ function(add_stack_project target source_dir)
             ${EMU68_TOOLCHAIN_ARGS}
             ${_debug_args}
             ${_cache_ops_args}
+            ${_lto_args}
+            ${_stamp_args}
         BUILD_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR>
         INSTALL_COMMAND ${CMAKE_COMMAND} -E env PATH=${EMU68_TOOLCHAIN_BIN_DIR}:$ENV{PATH} ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
         DEPENDS ${STACK_DEPENDS}
@@ -394,6 +423,17 @@ if(NOT EMU68_DEBUG_BACKEND STREQUAL "off")
         string(APPEND PACKAGE_SUFFIX "-mixed")
     endif()
 endif()
+# A local build carries its stamp last, so a workstation archive can never pass for a
+# release one, and two of them never collide.  The ReadMe gets a banner and the
+# Installer's welcome text shows it next to the version.
+set(PACKAGE_VERSION_DISPLAY "${PACKAGE_VERSION}")
+set(BUILD_NOTICE "")
+if(EMU68_BUILD_STAMP)
+    string(APPEND PACKAGE_SUFFIX "-${EMU68_BUILD_STAMP}")
+    string(APPEND PACKAGE_VERSION_DISPLAY " ${EMU68_BUILD_STAMP}")
+    set(BUILD_NOTICE
+        "*** LOCAL DEVELOPMENT BUILD ${EMU68_BUILD_STAMP}\n*** Not an official release.\n\n")
+endif()
 
 set(PACKAGE_NAME    "emu68-drivers-${PACKAGE_VERSION}${PACKAGE_SUFFIX}")
 set(PACKAGE_DIR     "${CMAKE_BINARY_DIR}/package")
@@ -487,7 +527,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, Arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device (DEVS/USBHardware)          -> emu68-xhci-driver-context\n  xhci.device (Storage/DEVS/USBHardware)  -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, Arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component

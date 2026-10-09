@@ -51,10 +51,14 @@ zero warnings before reporting the task done.
 `EMU68_DEBUG_BACKEND` (default `pistorm`) selects the debug sink for the whole
 stack, propagated to every component:
 
-- `pistorm` — `RawDoFmt` → magic `0xdeadbeef` (Emu68 trap). ROM-able.
-- `serial`  — `debug.lib` `KPutChar` → AmigaOS serial console @ 9600. **Not**
-  ROM-able (links a 4-byte `_SysBase` `.bss`).
+- `pistorm` — magic `0xdeadbeef` (Emu68 trap). ROM-able.
+- `serial`  — Exec `RawPutChar`, the `kprintf` path: serial port, or whatever
+  redirects it (Sashimi). ROM-able.
 - `off`     — debug compiled out (smallest binaries).
+
+Both sinks format with emu68-common's `fmt_vformat` (C argument rules — `%d` is
+32-bit, no `l` needed — and no Exec call). The serial sink is the one place that
+takes `SysBase` from address 4 — debug printing has no context to carry it.
 
 Mechanism lives in `emu68-common` (`include/debug.h` + the shared
 `cmake/Emu68CommonDebug.cmake` module) — see that component's own docs.
@@ -124,21 +128,31 @@ address, so free it only with `dma_free` — never `dma_pool_region_free` or
 
 ### Mandatory include pattern for every driver `.c` file
 
-Every `.c` file that uses Exec or the `memory.h` inline functions must open with:
+Never read the Exec base from address 4: on PiStorm that is an Amiga-bus cycle
+(~1.5 µs) per Exec call. Every `.c` file opens, before any include, with:
 
 ```c
-#ifdef __INTELLISENSE__
-#include <clib/exec_protos.h>
-#else
 #define __NOLIBBASE__
-#define EXEC_BASE_NAME (*(struct ExecBase **)4UL)
-#include <proto/exec.h>
-#endif
+#define EXEC_BASE_NAME SysBase /* a local in every function, from its context's sysBase */
 ```
 
-The `__INTELLISENSE__` guard lets IDEs resolve symbols without the
-Bebbo-specific `proto/exec.h` magic. Omitting `proto/exec.h` causes
-`AllocPooled`/`FreePooled` implicit-declaration warnings when `memory.h` is included.
+and every function that calls Exec — `pool_*`, `cache_pre_dma`/`cache_post_dma`
+and other emu68-common macros included — starts with
+`struct ExecBase *SysBase = p->sysBase;`, where `p` is one of its own
+parameters. The base is stored once, from the init function's a6, in the device
+or library base, and copied into each context struct when it is created (unit,
+controller, ring, request, …), so reaching it is always one hop. Interrupt
+servers and init functions name their a6 parameter `SysBase`. A header
+`static inline` that calls Exec does the same from its own context parameter
+(an inline body sees no caller locals, but every includer binds `SysBase`).
+
+`__NOLIBBASE__` must come first: without it `proto/exec.h` declares a global
+`SysBase`, and a missing local compiles silently against it (it then fails only
+at link time, as these targets have no such symbol).
+
+The rule is a review rule, not a build-enforced one. Only a handful of places
+may read address 4, each for a stated reason: the serial debug sink and the
+nvme mounter's boot point.
 
 ### Compiler warning flags
 
@@ -148,6 +162,59 @@ All components are built with `-Wall -Wconversion -Wsign-conversion -Wshadow
 - All size/count arithmetic must use `ULONG` — avoid mixing `s32` `min()`/`max()` with unsigned operands; use the ternary operator instead.
 - Every non-`static` function needs a visible prototype at its definition site (include the relevant header in the `.c` file).
 - Functions with no parameters must be declared `f(void)`.
+
+### Module layout and LTO
+
+Two per-target calls that look like flags but are not, so they do not break the "state a flag at
+exactly one level" rule:
+
+- `emu68_module_layout(<target> [WRITABLE])` links the module through
+  `components/emu68-common/ldscripts/module.lds`. That script is the module contract:
+  `.text.entry` (the `doNotExecute` stub, which `LoadSeg()` runs at offset 0) and `.text.modhdr`
+  (the romtag) are placed first, `_endOfCode` is defined at the true end of `.text` so
+  `RT_ENDSKIP` bounds the whole module, and a link-time `ASSERT` rejects any writable section.
+  Pin the stub and the romtag with `__attribute__((used, section(".text.entry")))` /
+  `(".text.modhdr")`. The stub is checked to be `moveq #-1,d0; rts` and there is no way to
+  waive that, so a stub that wants to do more must still start with the `moveq`. `used` is load-bearing and `ENTRY()` is **not** a substitute: it is not an
+  LTO root, and without it the plugin discards the whole module and still emits a valid, empty
+  HUNK file. Pass `WRITABLE` only for a module that is never placed in ROM.
+- `emu68_enable_lto(<target>)` sets CMake's `INTERPROCEDURAL_OPTIMIZATION` property. **Never write
+  `-flto` by hand.** A TU whose payload is file-scope `asm()` must opt out with
+  `emu68_lto_keep_real_objects(<t> <src>…)`: LTO's symbol table cannot see a symbol defined only
+  inside an asm string, so the definition is silently dropped and the link fails with an undefined
+  reference (verified, not assumed), and which partition it would land in is unspecified.
+  Two rules before reaching for it:
+  **(1) Should it be a `.c` at all?** Only if the asm needs the C compiler — `offsetof()` fed
+  through `"i"` operands. Without those, write it as `.S`: assembly never enters LTO, so there is
+  no exception to state. `gic400_dispatch.c` and genet-sana2's `bcmgenet-isr.c` need C;
+  `mounter/bootpoint.S` did not, and converting it removed poseidon's last exception outright.
+  **(2) Is the file the asm block and nothing else?** A TU that opts out takes everything in it
+  out, so split the block off rather than excluding the file it grew up in.
+  (`emu68-common`'s `memory.c` opts out for its own reason; see its `CMakeLists.txt`.) An
+  interrupt server is **not** a reason to opt out.
+- An Exec interrupt server is marked `EMU68_INTSERVER(<name>)` (`<intserver.h>`), which gives it a
+  `.text.isr.<name>` section of its own, and named in `emu68_isr_z_check(<t> SERVERS <name>…)`.
+  The check slices the server out of the **linked** module — the map gives a section's address and
+  size whatever the symbol's linkage, where HUNK has no symbols and most servers are `static` — and
+  fails the build if any exit path leaves Z from something other than D0, if the server tail-calls
+  out of itself, or if a server ships undeclared. It therefore checks the bytes that ship, with LTO
+  on or off. A server written in file-scope `asm()` says `.section .text.isr.<name>,"ax"` itself,
+  and must hand `.text` back at the end: GCC emits a top-level `asm()` before any function body and
+  tracks the current section itself, so without that the rest of the TU lands in the server's
+  section.
+- **GCC synthesises `memcpy`/`memset`/`memmove`/`memcmp` calls during *ltrans* codegen**, after
+  the IR phase has ended. `ld` can still satisfy such a late reference out of `libcommon.a` — the
+  bsdsocket map shows all three pulled by an `ltransN.ltrans.o`, not by anything in the IR — but
+  only when the archive member is a **real object**, because an IR member can no longer be
+  compiled by then. That is the whole reason `emu68-common/src/memory.c` is `-fno-lto` and why its
+  assembly siblings `memcpy_movem.S`/`memset_movem.S` never needed anything: tested both ways on
+  gcc 16.2, LTO'ing `memory.c` ends in `undefined reference to memcmp`, and
+  `__attribute__((used))` does **not** fix it — the body is not being dropped, the member cannot
+  be codegen'd.
+
+`EMU68_LTO` defaults to ON and is forwarded to every component. A native `/opt/m68k-amigaos` build
+cannot do LTO — its binutils was configured `--disable-plugins`, so any LTO object inside a `.a`
+becomes an undefined reference; `check_ipo_supported()` detects that and warns rather than failing.
 
 ## Output Layout
 

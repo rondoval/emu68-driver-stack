@@ -1,6 +1,6 @@
 emu68 Driver Stack @PACKAGE_VERSION@
 ========================
-AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
+@BUILD_NOTICE@AmigaOS drivers for Raspberry Pi 4 / Compute Module 4 running Emu68.
 
 *** UPGRADING FROM 2.0? Two things can change how your machine comes up.
 *** Network interfaces are no longer configured in ENVARC:netstack.prefs -
@@ -114,7 +114,7 @@ xhci.device (DEVS:USBHardware/)
   The driver comes in two versions and you pick ONE at install time (see WHAT
   TO INSTALL above). Poseidon itself is NOT part of this archive.
 
-    6.x @XHCI_VERSION@  for Poseidon for AmigaOS 6.x. Shows USB 3.0 devices as
+    6.x @XHCI_VERSION@  for Poseidon for AmigaOS 6.2 or newer. Shows USB 3.0 devices as
       what they are instead of disguising them as USB 2.0, and supports the
       fast transfer mode UAS mass storage uses.
 
@@ -205,6 +205,14 @@ NetLogViewer (C:, with icon)
   "Run >NIL: C:NetLogViewer CX_POPUP NO". The icon carries the CX_POPKEY /
   CX_PRIORITY / CX_POPUP tooltypes and DONOTWAIT, so a copy in WBStartup
   works too.
+
+NetSpeed (C:, with icon)
+  Throughput monitor, installed with the bundled stack: a window showing
+  current, average and peak speed in both directions, the link speed and a
+  graph of the last few minutes, for any interface. Everything is set from
+  the Settings menu, and Settings > Save keeps it in ENV:NetSpeed.prefs. The
+  window iconifies to an AppIcon; NetShutdown closes it. Start it from
+  Workbench, or with "Run >NIL: C:NetSpeed".
 
 nvme.device @NVME_VERSION@ (DEVS:)
   Storage driver for a PCIe-attached NVMe SSD.
@@ -313,7 +321,7 @@ REQUIREMENTS
   - Raspberry Pi 4 or CM4 running @CACHE_OPS_FIRMWARE_REQ@
   - AmigaOS 3.x
   - USB stack (for xhci.device): Poseidon, distributed separately. The 6.x
-    driver needs Poseidon for AmigaOS 6.x; the 5.x driver runs on classic
+    driver needs Poseidon for AmigaOS 6.2 or newer; the 5.x driver runs on classic
     Poseidon 4.x and on 6.x alike
   - Networking (for genet.device): the netdev version requires the bundled
     lwip-amiga stack; the SANA-II version works with either that or a

@@ -60,6 +60,7 @@ EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial" ./scripts/docker-build.sh
 | `EMU68_TIER` | `debug` | Stack-wide baseline for *what* is emitted. Cumulative ladder: `off` → `profile` (timing probes + `perf_report`) → `debug` (`+` asserts and logging) → `trace` (`+` verbose per-operation logging). |
 | `EMU68_PROFILE`, `EMU68_DEBUG`, `EMU68_TRACE` | empty | Pin individual components to a rung above the baseline. Each takes a CMake list of component target names, or `ALL`. An unknown name, an unknown tier, or a component named in two lists fails at configure time. |
 | `EMU68_FORCE_LVO_CACHE_OPS` | `OFF` | Cache-op flavor — see [below](#the-dcache-extensions). `OFF` emits the inline Emu68 range opcodes (the `-rangeops` archives); `ON` routes through exec's `CachePreDMA`/`CachePostDMA` (the standard archives). |
+| `EMU68_LTO` | `ON` | Link-time optimization, per target (CMake's `INTERPROCEDURAL_OPTIMIZATION`). |
 | `M68K_CPU` | `68040` | `68000` `68010` `68020` `68040` `68060` `68080` |
 | `M68K_FPU` | `hard` | `hard` `soft` |
 | `M68K_CRT` | `nix20` | `nix20` `nix13` `clib2` `ixemul` `newlib` |

@@ -22,8 +22,7 @@
 # Usage
 #   ./build.sh [--build] [--package] [--upload] [--dry-run]
 #     --build     build the stack in the toolchain container (debug backend below)
-#     --package   build, then create build/package/emu68-drivers-<ver>.lha
-#                 (use BACKEND=off for a release)
+#     --package   build, then create build/package/emu68-drivers-<ver>[-<variant>]-<stamp>.lha
 #     --upload    push the built binaries (install/LIBS, DEVS, C) to the Amiga
 #     (none of --build/--package/--upload => --build --upload)
 #     --dry-run   upload: show what would be copied; copy nothing
@@ -56,6 +55,17 @@
 #     BUILD_IMAGE=<image>           override the toolchain image (default lives in
 #                                   scripts/docker-build.sh)
 #     AE=<path to AE.exe>
+#     LTO=<on|off>                  link-time optimization (default on); off is for bisecting
+#                                   a suspected miscompile, not for releases
+#     EMU68_CONFIGURE_ARGS=...      extra -D flags, appended last so they win
+#
+# Build stamp: every build made here is a local build and is marked as one. Each run
+# computes one stamp, dev-<YYYYMMDD>-<HHMMSS>-g<hash>[-dirty] (-dirty = uncommitted
+# changes to tracked files, submodules included), and passes it as EMU68_BUILD_STAMP;
+# it ends up at the tail of every shipped binary's $VER (`Version <file> full` shows
+# it), in the .lha name, the packaged ReadMe and the Installer's welcome text.
+# Releases are built only by the tag-triggered CI workflow
+# (.github/workflows/release.yml), which never sets it.
 set -euo pipefail
 
 # --- config ------------------------------------------------------------------
@@ -69,6 +79,22 @@ TIER_PROFILE="${PROFILE:-}"
 TIER_DEBUG="${DEBUG:-}"
 TIER_TRACE="${TRACE:-}"
 CACHE_FLAVOR="${FLAVOR:-rangeops}"
+LTO="${LTO:-on}"
+
+# The local-build stamp (see the header), computed once per run.  Untracked files do
+# not make a tree dirty (as in Linux's setlocalversion); no git => date and time only.
+build_stamp() {
+    local stamp hash
+    stamp="dev-$(date +%Y%m%d-%H%M%S)"
+    if hash="$(git -C "$ROOT" rev-parse --short=8 HEAD 2>/dev/null)"; then
+        stamp+="-g$hash"
+        if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+            stamp+="-dirty"
+        fi
+    fi
+    printf '%s\n' "$stamp"
+}
+BUILD_STAMP="$(build_stamp)"
 case "$CACHE_FLAVOR" in
     rangeops|lvo) ;;
     *) echo "FLAVOR must be rangeops or lvo (got: $CACHE_FLAVOR)" >&2; exit 2 ;;
@@ -170,11 +196,17 @@ if (( DO_BUILD )); then
     configure_args+=" -DEMU68_PROFILE=$TIER_PROFILE"
     configure_args+=" -DEMU68_DEBUG=$TIER_DEBUG"
     configure_args+=" -DEMU68_TRACE=$TIER_TRACE"
+    case "${LTO,,}" in
+        on|yes|1)  configure_args+=" -DEMU68_LTO=ON" ;;
+        off|no|0)  configure_args+=" -DEMU68_LTO=OFF" ;;
+        *) echo "LTO must be on or off (got '$LTO')" >&2; exit 2 ;;
+    esac
     if [[ "$CACHE_FLAVOR" == "lvo" ]]; then
         configure_args+=" -DEMU68_FORCE_LVO_CACHE_OPS=ON"
     else
         configure_args+=" -DEMU68_FORCE_LVO_CACHE_OPS=OFF"
     fi
+    configure_args+=" -DEMU68_BUILD_STAMP=$BUILD_STAMP"
     [[ -n "${EMU68_CONFIGURE_ARGS:-}" ]] && configure_args+=" $EMU68_CONFIGURE_ARGS"
     export EMU68_CONFIGURE_ARGS="$configure_args"
     export EMU68_BUILD_DIR="$BUILD_DIR"
@@ -184,7 +216,7 @@ if (( DO_BUILD )); then
     [[ -n "${BUILD_IMAGE:-}" ]] && export EMU68_BUILD_IMAGE="$BUILD_IMAGE"
 
     what="building"; (( DO_PACKAGE )) && what="building + packaging"
-    echo ">> $what via scripts/docker-build.sh (backend=$DEBUG_BACKEND tier=$DEBUG_TIER flavor=$CACHE_FLAVOR${TIER_PROFILE:+, profile=$TIER_PROFILE}${TIER_DEBUG:+, debug=$TIER_DEBUG}${TIER_TRACE:+, trace=$TIER_TRACE}) ..."
+    echo ">> $what via scripts/docker-build.sh (backend=$DEBUG_BACKEND tier=$DEBUG_TIER flavor=$CACHE_FLAVOR${TIER_PROFILE:+, profile=$TIER_PROFILE}${TIER_DEBUG:+, debug=$TIER_DEBUG}${TIER_TRACE:+, trace=$TIER_TRACE}, lto=${LTO,,}, stamp=$BUILD_STAMP) ..."
     if (( DO_PACKAGE )); then
         # The `package` target DEPENDS on the full `stack`, so this builds then archives.
         "$ROOT/scripts/docker-build.sh" --target package
