@@ -74,7 +74,8 @@ set(EMU68_DEBUG_COMPONENTS
     emu68-genet-driver-netdev
     emu68-genet-driver-sana2
     emu68-nvme-driver
-    lwip-amiga)
+    lwip-amiga
+    emu68-vchiq-library)
 
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
@@ -92,7 +93,8 @@ set(EMU68_CACHE_OPS_COMPONENTS
     emu68-xhci-driver-context
     emu68-genet-driver-netdev
     emu68-genet-driver-sana2
-    emu68-nvme-driver)
+    emu68-nvme-driver
+    emu68-vchiq-library)
 
 # The tier-override lists, in ascending rung order.  A component may appear in at
 # most one; each entry must name a debug-emitting component (or the list is ALL).
@@ -171,6 +173,7 @@ set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68
 set(EMU68_GENET_SANA2_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-sana2"   CACHE PATH "Path to emu68-genet-driver-sana2 (3.x, SANA-II) sources")
 set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
 set(LWIP_AMIGA_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/lwip-amiga"          CACHE PATH "Path to lwip-amiga sources")
+set(EMU68_VCHIQ_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-vchiq-library" CACHE PATH "Path to emu68-vchiq-library sources")
 
 # Validate required paths
 foreach(required_path
@@ -185,7 +188,8 @@ foreach(required_path
     EMU68_GENET_NETDEV_SOURCE_DIR
     EMU68_GENET_SANA2_SOURCE_DIR
     EMU68_NVME_SOURCE_DIR
-    LWIP_AMIGA_SOURCE_DIR)
+    LWIP_AMIGA_SOURCE_DIR
+    EMU68_VCHIQ_SOURCE_DIR)
     if(NOT EXISTS "${${required_path}}")
         message(FATAL_ERROR
             "Required path does not exist: ${required_path}='${${required_path}}'\n"
@@ -305,6 +309,8 @@ add_stack_project(emu68-genet-driver-sana2 "${EMU68_GENET_SANA2_SOURCE_DIR}"
     INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/Storage"
     DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
+# VideoCore VCHIQ transport: vchiq.library plus the VPUProbe/VPUTool test tools.
+add_stack_project(emu68-vchiq-library "${EMU68_VCHIQ_SOURCE_DIR}" DEPENDS emu68-common mailbox.resource emu68-gic400-library)
 
 get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
 add_custom_target(stack ALL DEPENDS ${_stack_targets})
