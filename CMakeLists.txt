@@ -88,7 +88,7 @@ option(EMU68_FORCE_LVO_CACHE_OPS
     OFF)
 
 # vchiq.device's test-only commands, for emu68-vchiq-library's hardware test cycle
-# (testdata/hwcycle.py: the repair test).  Never set for a release.
+# (tests/: the repair test).  Never set for a release.
 option(EMU68_VCHIQ_TEST_HOOKS
     "Build vchiq.device with the test-only commands of its hardware test cycle"
     OFF)
@@ -313,8 +313,8 @@ add_stack_project(emu68-genet-driver-sana2 "${EMU68_GENET_SANA2_SOURCE_DIR}"
     DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
 # VideoCore VPU: vchiq.device (the VCHIQ transport), videocodec.library (the codec API),
-# videocore.codec (its MMAL backend: codecs, ISP) and the VCInfo check; the test rig
-# (VPUTool, VPUPlay) and the examples (VCPlay, VCShow) go to Developer/ only.
+# videocore.codec (its MMAL backend: codecs, ISP), the VCInfo check and the VCGrab recorder; the test rig
+# (VCTest, VPUPlay) and the examples (VCPlay, VCShow) go to Developer/ only.
 add_stack_project(emu68-vchiq-library "${EMU68_VCHIQ_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
 
 get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
@@ -542,7 +542,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device          -> emu68-xhci-driver-context\n  xhci-legacy.device   -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, Arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  vchiq.device      -> emu68-vchiq-library\n  videocodec.library, videocodec/videocore.codec -> emu68-vchiq-library\n  AHI/videocore.audio, AudioModes/VIDEOCORE -> emu68-vchiq-library\n  Classes/DataTypes/vcjpeg.datatype, Storage/DataTypes/VCJPEG -> emu68-vchiq-library\n  VCInfo            -> emu68-vchiq-library\n  Developer/Tools/VPUTool, Developer/Tools/VPUPlay, Developer/Examples/videocodec -> emu68-vchiq-library\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  Developer/Autodocs/gic400.doc, Developer/FD/gic400_lib.fd -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device          -> emu68-xhci-driver-context\n  xhci-legacy.device   -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  vchiq.device      -> emu68-vchiq-library\n  videocodec.library, videocodec/videocore.codec -> emu68-vchiq-library\n  AHI/videocore.audio, AudioModes/VIDEOCORE -> emu68-vchiq-library\n  Classes/DataTypes/vcjpeg.datatype, Storage/DataTypes/VCJPEG -> emu68-vchiq-library\n  VCInfo            -> emu68-vchiq-library\n  Tools/Commodities/VCGrab -> emu68-vchiq-library\n  Developer/Tools/VCTest, Developer/Tools/VPUPlay, Developer/Examples/videocodec -> emu68-vchiq-library\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -580,26 +580,47 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/DEVS" "${PACKAGE_STAGE}/DEVS"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/C"    "${PACKAGE_STAGE}/C"
-    # Config templates (ENVARC/netstack.prefs.default) — the Install script copies
-    # them to ENVARC: only when the user has no existing prefs.
+    # Config template (ENVARC/netstack.prefs.default) — the Install script copies
+    # it to ENVARC:netstack.prefs only when the user has no prefs file yet.
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/ENVARC" "${PACKAGE_STAGE}/ENVARC"
-    # SANA-II genet variant (+ genet-stats) installs under Storage/ — present in the
-    # archive but not installed; the installer copies genet.device to DEVS:Networks/
-    # only if the user picks the SANA-II line.
+    # Storage/ holds what the Install script places only on request:
+    #   DEVS/Networks/genet.device, C/genet-stats - the SANA-II genet line, copied
+    #     to DEVS:Networks/ and C: when the user picks it over netdev;
+    #   NetInterfaces/genet - the commented interface sample, copied to
+    #     SYS:Storage/NetInterfaces/ with the bundled stack, and to
+    #     DEVS:NetInterfaces/ when a genet.device is installed and none is there;
+    #   DataTypes/VCJPEG - vcjpeg.datatype's descriptor, copied to
+    #     SYS:Storage/DataTypes/ and added from S:User-Startup.
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/Storage" "${PACKAGE_STAGE}/Storage"
-    # Public SDK headers for the shipped libraries (nvme, gic400, bcmpcie/openpci),
-    # under Developer/include/.  proto/clib/inline/pragmas hold only these libs'
-    # headers (emu68-common's sit at the install/include/ root) -> copy those four
-    # wholesale.  devices/
-    # and libraries/ are enumerated to ship only the curated set: devices/nvme.h
-    # (not nvme_defs.h), devices/netdev.h (the NIC driver ABI -- a third party can
-    # write a netdev driver or stack against it; BSD-3-Clause, and it includes
-    # nothing but exec/types.h), devices/vchiq.h (VideoCore firmware services as
-    # Exec I/O; BSD-3-Clause, exec/ headers only) and the bcmpcie/gic library headers minus
-    # pci_constants.h / pci_ids.h -- which keeps emu68-common out entirely
-    # (nothing pulls in types.h).
+    # Classes/DataTypes/vcjpeg.datatype -> SYS:Classes/DataTypes/
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/Classes" "${PACKAGE_STAGE}/Classes"
+    # Tools/Commodities/VCGrab and its icon -> SYS:Tools/Commodities/
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/Tools" "${PACKAGE_STAGE}/Tools"
+    # Developer/ as the components install it: test rigs (Developer/Tools),
+    # examples with their source (Developer/Examples), autodocs (Developer/Autodocs)
+    # and FD files (Developer/FD) -- in the archive only, never installed.  The
+    # headers below join it.
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_INSTALL_PREFIX}/Developer" "${PACKAGE_STAGE}/Developer"
+    # Public SDK headers under Developer/include/.  proto/clib/inline/pragmas hold
+    # only the shipped libraries' headers (gic400, bcmpcie, videocodec and its
+    # backend interface; emu68-common's sit at the install/include/ root) -> copy
+    # those four wholesale.  devices/, libraries/ and net/ are enumerated to ship
+    # only the curated set:
+    #   devices/nvme.h (not nvme_defs.h); devices/netdev.h, the NIC driver ABI - a
+    #     third party can write a netdev driver or stack against it (BSD-3-Clause,
+    #     exec/types.h only); devices/vchiq.h, VideoCore firmware services as Exec
+    #     I/O (BSD-3-Clause, exec/ headers only);
+    #   the gic400, bcmpcie and openpci library headers, minus pci_constants.h,
+    #     pci_ids.h and the drivers' vector helpers pci_irq.h; videocodec.h and
+    #     videocodec_backend.h;
+    #   net/if_arp_ioctl.h, below.
+    # None of them includes anything but NDK headers, which keeps emu68-common out
+    # entirely (nothing pulls in types.h).
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/include/proto"   "${PACKAGE_STAGE}/Developer/include/proto"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
