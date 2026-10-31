@@ -4,8 +4,9 @@
 ;
 ; NOTE: this is a template.  The build's `package` target generates the real
 ; `Install` from it, substituting @PACKAGE_VERSION_DISPLAY@ (the CMake project
-; version, plus the build stamp on a local build) and @RANGEOPS_BUILD@ (0/1) from
-; the cache-op flavor.
+; version, plus the build stamp on a local build), @RANGEOPS_BUILD@ (0/1) from
+; the cache-op flavor and @DEBUG_BACKEND@ (off, serial or pistorm) from the debug
+; sink.
 ;
 ; TEXT BUDGET - the Installer word-wraps display text at about 53 characters
 ; (topaz 8; it is really a pixel width, so a wider screen font wraps sooner)
@@ -20,6 +21,7 @@
 
 (set #emu68-version "@PACKAGE_VERSION_DISPLAY@")
 (set #rangeops-build @RANGEOPS_BUILD@)
+(set #debug-backend "@DEBUG_BACKEND@")
 
 ; A system-wide install spread across LIBS:, DEVS: and C:; there is no single
 ; application directory.
@@ -45,29 +47,52 @@
 ; Helper procedures
 ; ---------------------------------------------------------------------------
 
+; P_verstr - "version.revision" text of a getversion result.
+(procedure P_verstr #vs_ver
+    (cat (shiftright #vs_ver 16) "." (BITAND #vs_ver 65535))
+)
+
 ; P_copyver - install one versioned file (library or device) safely.
-; Upgrades automatically when the bundled copy is newer; if an equal or newer
-; copy is already installed, asks before replacing it.  getversion returns 0 for
+; A newer bundled copy upgrades.  At the same version the checksum decides: an
+; identical file is kept, a different one is replaced without asking - the
+; standard, -rangeops and -serial archives of a release carry the same versions,
+; so that is a switch between archives (or a rebuild), and keeping the old build
+; would leave rangeops drivers that refuse to load on official Emu68.  Only an
+; installed copy NEWER than the bundled one asks first.  getversion returns 0 for
 ; a missing file, so a fresh install always copies.  (optional "force") clears a
 ; delete-protected destination left by a previous install.
-; Returns 1 when it (re)installed the file, 0 when it kept the existing copy -
-; callers use this to keep the paired CLI tool in lockstep with the binary.
+; Returns 1 when the installed file is now the bundled build (copied, or found
+; identical), 0 when a newer copy was kept - callers use this to keep the paired
+; CLI tool in lockstep with the binary.
 (procedure P_copyver #cv_src #cv_destdir #cv_name
     (set #cv_dest (tackon #cv_destdir #cv_name))
     (set #cv_do 1)
+    (set #cv_bundled 1)
     (if (exists #cv_dest (noreq))
-        (if (>= (getversion #cv_dest) (getversion #cv_src))
-            (set #cv_do
-                (askbool
-                    (prompt
-                        (cat
-                            "An equal or newer " #cv_name "\n"
-                            "is already installed in " #cv_destdir "\n\n"
-                            "Replace it with the bundled version?"
+        (
+            (set #cv_have (getversion #cv_dest))
+            (set #cv_new (getversion #cv_src))
+            (if (> #cv_have #cv_new)
+                (
+                    (set #cv_do
+                        (askbool
+                            (prompt
+                                (cat
+                                    "The installed " #cv_name " is newer\n"
+                                    "than the one in this archive:\n\n"
+                                    "  installed: " (P_verstr #cv_have) " in " #cv_destdir "\n"
+                                    "  this archive: " (P_verstr #cv_new) "\n\n"
+                                    "Replace it with the older version?"
+                                )
+                            )
+                            (help @copylib-help)
+                            (default 0)
                         )
                     )
-                    (help @copylib-help)
-                    (default 0)
+                    (set #cv_bundled #cv_do)
+                )
+                (if (AND (= #cv_have #cv_new) (= (getsum #cv_dest) (getsum #cv_src)))
+                    (set #cv_do 0)
                 )
             )
         )
@@ -81,15 +106,14 @@
             (optional "force")
         )
     )
-    ; Procedure return value: 1 if we copied, 0 if we kept the existing file.
-    #cv_do
+    #cv_bundled
 )
 
 ; P_copyforce - unconditional force-copy of a file into a destination drawer, with
 ; no version check.  Used for the CLI tools (kept in lockstep with the binary they
 ; talk to) and for the two files that can legitimately be DOWNGRADED: the chosen
-; genet.device variant (switching netdev 4.x <-> SANA-II 3.x is a same-name version
-; change P_copyver would refuse) and the lwip-amiga bsdsocket.library (which must
+; genet.device variant (switching netdev 4.x -> SANA-II 3.x is a same-name version
+; downgrade P_copyver would ask about) and the lwip-amiga bsdsocket.library (which must
 ; replace whatever incompatible bsdsocket a third-party stack installed).
 (procedure P_copyforce #ct_src #ct_destdir
     (copyfiles
@@ -102,35 +126,64 @@
 )
 
 ; ---------------------------------------------------------------------------
-; Welcome
+; Welcome - names the archive, so a wrong download shows on the first screen:
+; the cache-op flavour, and the debug sink unless the build is silent.
 ; ---------------------------------------------------------------------------
+(set #welcome-archive "Archive: standard (any Emu68 from 1.1 alpha.1)\n")
+(if #rangeops-build
+    (set #welcome-archive "Archive: -rangeops (needs the dcache extensions)\n")
+)
+(set #welcome-debug "")
+(if (<> #debug-backend "off")
+    (set #welcome-debug (cat "Diagnostic build (" #debug-backend " output): slower.\n"))
+)
+(set #welcome-next "The next screens ask what to install.")
+(if (= @user-level 0)
+    (set #welcome-next "Novice mode installs the recommended set.")
+)
 (message
     (cat
         "Welcome to the emu68 Driver Stack installer.\n"
         "Version " #emu68-version "\n\n"
-        "AmigaOS drivers for the Raspberry Pi 4 / CM4\n"
-        "running Emu68: USB (xhci), Gigabit Ethernet\n"
-        "(genet + TCP/IP stack), NVMe storage, and the\n"
-        "PCIe and interrupt libraries they need.\n\n"
-        "You choose the parts you want on the next few\n"
-        "screens; the ReadMe describes each one."
+        "Drivers for the Pi 4 / CM4 under Emu68: USB,\n"
+        "Ethernet, TCP/IP, NVMe, VideoCore, PCIe.\n\n"
+        #welcome-archive
+        #welcome-debug
+        "\n"
+        #welcome-next
     )
     (all)
 )
 
 ; ---------------------------------------------------------------------------
-; Firmware capability gate (rangeops archives only).  The drivers in this
-; archive emit inline Emu68 range cache opcodes; C/emu68check asks the
-; firmware (via devicetree.resource) whether it decodes them.  (safe) makes
-; the probe run in PRETEND mode too - it is query-only.
+; Firmware capability check.  The -rangeops drivers emit inline Emu68 range
+; cache opcodes; C/emu68check asks the firmware (via devicetree.resource)
+; whether it decodes them.  (safe) makes the probe run in PRETEND mode too - it
+; is query-only.  On a -rangeops archive:
 ;   RC 0  capability advertised             -> proceed
 ;   RC 5  Emu68 without the extensions      -> abort (wrong archive here)
 ;   RC 10 no devicetree.resource            -> not under Emu68: warn, ask
+; On the standard archive RC 0 means the -rangeops one would serve this machine
+; better: say so, and let the user carry on or abort.
 ; Other values (e.g. a corrupt tool) fall through - fail open.
 ; ---------------------------------------------------------------------------
+(set #rangeops-rc (run "C/emu68check RANGEOPS" (safe)))
+(if (AND (NOT #rangeops-build) (= #rangeops-rc 0))
+    (message
+        (cat
+            "Your Emu68 has the dcache extensions, so the\n"
+            "-rangeops archive of this release suits it\n"
+            "better: its drivers do their cache work\n"
+            "inline, which makes the netdev Ethernet driver\n"
+            "with the bundled stack much faster.\n\n"
+            "Proceed installs this archive anyway; Abort\n"
+            "stops here, to fetch the -rangeops one."
+        )
+        (all)
+    )
+)
 (if #rangeops-build
     (
-        (set #rangeops-rc (run "C/emu68check RANGEOPS" (safe)))
         (if (= #rangeops-rc 5)
             (abort
                 (cat
@@ -176,90 +229,85 @@
 )
 
 ; ---------------------------------------------------------------------------
-; Component selection
+; USB drivers - one box per line.
 ;
-; gic400.library and bcmpcie.library can be ticked to install them on their own
-; (for other PCIe software), but any selected driver pulls in the libraries it
-; needs automatically - you can never end up with a driver whose library is
-; missing.  The library boxes therefore default OFF: leave them unticked and the
-; drivers bring the libraries along.
+; xhci.device (6.x) implements only Neptune's own context HCD interface (Neptune:
+; an incompatible fork of the Poseidon USB stack, 6.0-6.2 published as "Poseidon
+; for AmigaOS").  xhci-legacy.device (5.x) speaks the classic V1/V2 interface,
+; which Neptune also retains - so 5.x runs on Neptune and classic Poseidon 4.x,
+; while 6.x needs Neptune.  Up to 5.5 the 5.x line was xhci.device too; the names
+; now differ, so both can be installed.  No USB stack is part of this archive.
 ;
-; Ethernet and USB are NOT in this list.  USB is one mutually-exclusive line
-; choice asked below, because the two xhci.device variants cannot coexist.
-; Ethernet is two questions - the genet.device variant, then the TCP/IP stack -
-; because since 2.1 the bundled stack drives SANA-II drivers too, so the driver
-; no longer decides the stack.
+; The defaults follow what is installed.  #psd-classic: classic Poseidon 4.x is
+; installed (its library reports below 6).  The 6.x box is ticked where Neptune can
+; use it - an old 6.x xhci.device, Neptune installed, or no classic Poseidon (fresh,
+; or Neptune on the 5.x driver, where 6.x is an upgrade) - but not on a Poseidon-only
+; machine.  #xhci-old-5x: the installed xhci.device is a 5.x driver; with classic
+; Poseidon it is Poseidon's and is not replaced unasked (the guard below).
 ; ---------------------------------------------------------------------------
-
-; Bit layout of the selection mask:
-;   0 gic400.library  1 bcmpcie.library  2 nvme  3 lspci
-; Default 12 = bits 2..3 (nvme + lspci); libraries derived as needed.
+(set #xhci-old (getversion "DEVS:USBHardware/xhci.device"))
+(set #psd-ver (getversion "LIBS:poseidon.library"))
+(set #xhci-old-5x (AND (> #xhci-old 0) (< #xhci-old 393216)))
+(set #psd-classic (AND (> #psd-ver 0) (< #psd-ver 393216)))
+; Bit 0 xhci.device (6.x), bit 1 xhci-legacy.device (5.x).
+(set #usb-default 0)
+(if (OR (>= #xhci-old 393216)
+        (OR (exists "LIBS:neptune.library" (noreq)) (NOT #psd-classic)))
+    (set #usb-default 1))
+(if (OR #psd-classic (exists "DEVS:USBHardware/xhci-legacy.device" (noreq)))
+    (set #usb-default (+ #usb-default 2)))
 (if (= @user-level 0)
-    (set #features 12)                       ; NOVICE: install the recommended set silently
-    (set #features
+    (set #usb-choice #usb-default)           ; NOVICE: what the machine has
+    (set #usb-choice
         (askoptions
-            (prompt "Select the components to install:")
+            (prompt "USB host-controller drivers:")
             (help
-                "nvme.device and lspci are ticked by default.\n\n"
-                "gic400.library and bcmpcie.library are needed\n"
-                "by the drivers and are installed automatically\n"
-                "with them - tick a library only if you want it\n"
-                "on its own, with no driver.\n\n"
-                "USB and Ethernet are chosen in the next steps.\n\n"
+                "The USB stack is distributed separately.\n\n"
+                "  xhci.device (6.x) - needs Neptune 6.x: real\n"
+                "    USB 3.0 and bulk streams (fast UAS mass\n"
+                "    storage); the best choice there.\n\n"
+                "  xhci-legacy.device (5.x) - for classic\n"
+                "    Poseidon 4.x; runs on Neptune too, but\n"
+                "    SuperSpeed appears as USB 2.0.\n\n"
+                "Both can be installed; select the device in\n"
+                "Trident or Neptune USB.\n\n"
                 @askoptions-help
             )
             (choices
-                "gic400.library  (interrupt controller)"
-                "bcmpcie.library (PCIe bus)"
-                "nvme.device     (NVMe storage)"
-                "lspci           (PCIe diagnostic tool)"
+                "xhci.device  (6.x, Neptune)"
+                "xhci-legacy.device  (5.x, Poseidon 4.x)"
             )
-            (default 12)
+            (default #usb-default)
         )
     )
 )
-
-(set #sel-gic400    (IN #features 0))
-(set #sel-bcmpcie   (IN #features 1))
-(set #install-nvme  (IN #features 2))
-(set #install-lspci (IN #features 3))
-
-; ---------------------------------------------------------------------------
-; USB line - one mutually-exclusive choice.
-;
-; The 6.x driver implements only the context HCD ABI of Poseidon for AmigaOS
-; 6.x.  The 5.x driver speaks the classic Poseidon HCD ABI, which Poseidon 6.x
-; also retains - so 5.x runs on both stacks, while 6.x needs the new one.  Both
-; are called xhci.device, so exactly one USB line can be installed.  Poseidon
-; itself is NOT part of this archive.
-; ---------------------------------------------------------------------------
-(if (= @user-level 0)
-    (set #usb-choice 0)                      ; NOVICE: the current 6.x line
-    (set #usb-choice
-        (askchoice
-            (prompt "USB (xhci.device):")
-            (help
-                "Choose ONE USB line - Poseidon is distributed\n"
-                "separately, so pick by the one you have.\n\n"
-                "  6.x - needs Poseidon for AmigaOS 6.x.  Real\n"
-                "    USB 3.0 plus bulk streams (fast UAS mass\n"
-                "    storage); the best choice there.\n\n"
-                "  5.x - required on classic Poseidon 4.x, and\n"
-                "    runs on 6.x too, but SuperSpeed appears as\n"
-                "    USB 2.0 with no streams - the slower one.\n\n"
-                @askchoice-help
+(set #usb-context (IN #usb-choice 0))
+(set #usb-legacy  (IN #usb-choice 1))
+; The 6.x driver would replace the xhci.device (5.x) classic Poseidon 4.x uses:
+; only when asked, and then with xhci-legacy.device installed for Poseidon to
+; switch to.
+(if (AND #usb-context (AND #xhci-old-5x #psd-classic))
+    (if (askbool
+            (prompt
+                "xhci.device here is the driver for classic\n"
+                "Poseidon 4.x (version 5.5 or older).\n\n"
+                "Installing the 6.x driver replaces it, and\n"
+                "Poseidon then needs xhci-legacy.device\n"
+                "(installed with it): select it in Trident.\n\n"
+                "Replace xhci.device with the 6.x driver?"
             )
-            (choices
-                "xhci 6.x  (Poseidon for AmigaOS 6.x)"
-                "xhci 5.x  (Poseidon 4.x, or 6.x slower)"
-                "None - no USB driver"
+            (help
+                "Answer No to keep Poseidon on its current\n"
+                "xhci.device; the 6.x driver is then not\n"
+                "installed.\n\n"
+                @askbool-help
             )
             (default 0)
         )
+        (set #usb-legacy 1)
+        (set #usb-context 0)
     )
 )
-(set #usb-context  (= #usb-choice 0))
-(set #usb-legacy   (= #usb-choice 1))
 (set #install-xhci (OR #usb-context #usb-legacy))
 
 ; ---------------------------------------------------------------------------
@@ -271,9 +319,20 @@
 ;   SANA-II 3.x  the classic driver, usable by any TCP/IP stack - including the
 ;                bundled one, which drives Ethernet-type SANA-II devices since
 ;                lwip-amiga 1.5.
+;
+; The default follows the installed genet.device: 4.x is the netdev line, any
+; older version a SANA-II driver.  With none installed the archive decides: netdev
+; pays off only with the inline range ops, so the standard archive defaults to
+; SANA-II (the ReadMe's WHAT TO INSTALL table).
 ; ---------------------------------------------------------------------------
+(set #genet-old (getversion "DEVS:Networks/genet.device"))
+(set #genet-default 1)                       ; SANA-II
+(if (OR (>= #genet-old 262144)               ; 4.0
+        (AND (= #genet-old 0) #rangeops-build))
+    (set #genet-default 0)                   ; netdev
+)
 (if (= @user-level 0)
-    (set #genet-choice 0)                    ; NOVICE: netdev genet
+    (set #genet-choice #genet-default)       ; NOVICE: the default above
     (set #genet-choice
         (askchoice
             (prompt "Ethernet driver (genet.device):")
@@ -293,7 +352,7 @@
                 "SANA-II @GENET_SANA2_VERSION@  (any TCP/IP stack)"
                 "None - no Ethernet driver"
             )
-            (default 0)
+            (default #genet-default)
         )
     )
 )
@@ -305,12 +364,24 @@
 ; TCP/IP stack - asked only when netdev was NOT chosen.  netdev genet.device
 ; can only be driven by the bundled lwip-amiga stack, so "netdev + keep my own
 ; stack" is a combination the user cannot reach; that is why no guard follows.
-; The consent gate below still asks before any bsdsocket.library is replaced.
+; The consent gate below still asks before another stack is replaced.
+;
+; C/emu68check BSDSOCKET tells whose LIBS:bsdsocket.library is installed: RC 0
+; the bundled stack's, 5 another stack's, 10 none.  The default keeps what is
+; there: the bundled stack when it is installed or no stack is, else leave
+; alone.  (safe) runs the read-only probe in PRETEND mode too.  Any other RC (a
+; corrupt tool) counts as another stack's, the safe side.
 ; ---------------------------------------------------------------------------
+(set #bsd-rc (run "C/emu68check BSDSOCKET" (safe)))
+(set #stack-ours (= #bsd-rc 0))
+(set #stack-default 1)                       ; leave alone
+(if (OR #stack-ours (= #bsd-rc 10))
+    (set #stack-default 0)                   ; the bundled stack
+)
 (if #net-netdev
     (set #stack-choice 0)                    ; netdev implies the bundled stack
     (if (= @user-level 0)
-        (set #stack-choice 0)                ; NOVICE: the bundled stack
+        (set #stack-choice #stack-default)   ; NOVICE: the default above
         (set #stack-choice
             (askchoice
                 (prompt "TCP/IP stack:")
@@ -330,76 +401,67 @@
                     "lwip-amiga  (the bundled stack)"
                     "Leave bsdsocket.library alone"
                 )
-                (default 0)
+                (default #stack-default)
             )
         )
     )
 )
 (set #install-stack (= #stack-choice 0))
 
-; openpci.library - optional, off by default, never offered to a NOVICE.
-(if (= @user-level 0)
-    (set #install-openpci 0)
-    (set #install-openpci
-        (askbool
-            (prompt
-                (cat
-                    "Install openpci.library?  (optional)\n\n"
-                    "A compatibility shim for software that opens\n"
-                    "'openpci.library' by name.\n\n"
-                    "WARNING: do NOT install it if you have a real\n"
-                    "PCI board (Mediator, Prometheus, G-REX ...) -\n"
-                    "the name clash breaks that board's driver."
-                )
-            )
-            (help
-                "openpci.library is only needed by older software\n"
-                "that opens 'openpci.library' by name and expects\n"
-                "the classic openpci API.  It forwards those\n"
-                "calls to bcmpcie.library.  New software should\n"
-                "use bcmpcie.library directly."
-            )
-            (default 0)
+; Installing the bundled stack over another one replaces that stack's
+; bsdsocket.library and its commands in C:.  Make the user accept that
+; explicitly, since we must not silently overwrite a TCP/IP library; an update
+; of the bundled stack itself skips the question.  Keeping the current stack
+; drops the bundled one, and with it the netdev genet.device, which nothing else
+; can open: the SANA-II driver takes its place.  This gate runs before anything
+; is installed, and it doubles as the netdev line's disclosure: netdev implies
+; this stack.
+(set #gate-ask "Replace them?")
+(if #net-netdev
+    (set #gate-ask
+        (cat
+            "Replace them?  Keeping your stack installs\n"
+            "the SANA-II genet.device instead of netdev."
         )
     )
 )
-
-; Installing the bundled stack replaces the user's bsdsocket.library.  Make them
-; accept that explicitly - declining aborts, since we must not silently overwrite
-; a TCP/IP library.  This gate runs before anything is installed, and it doubles
-; as the netdev line's disclosure: netdev implies this stack.
-(if #install-stack
+(if (AND #install-stack (NOT #stack-ours))
     (if (NOT
             (askbool
                 (prompt
                     (cat
                         "The bundled stack installs lwip-amiga's\n"
-                        "bsdsocket.library over the one you use now,\n"
-                        "and its own ping, traceroute, arp and\n"
-                        "AddNetInterface over the Roadshow commands\n"
-                        "of those names in C:.\n\n"
-                        "THIS CANNOT BE UNDONE from here - going back\n"
-                        "means reinstalling Roadshow, AmiTCP or Miami.\n\n"
-                        "Replace them?"
+                        "bsdsocket.library over any other TCP/IP stack\n"
+                        "(Roadshow, AmiTCP, Miami) and its own ping,\n"
+                        "traceroute, arp and AddNetInterface over the\n"
+                        "Roadshow commands of those names in C:.\n\n"
+                        "THIS CANNOT BE UNDONE from the installer.\n\n"
+                        #gate-ask
                     )
                 )
                 (help
                     "bsdsocket.library is the AmigaOS TCP/IP API\n"
                     "library and only one can be active, and the\n"
-                    "commands are Roadshow's own names.  Answer no,\n"
-                    "then run the installer again with the SANA-II\n"
-                    "driver and 'Leave bsdsocket.library alone' to\n"
-                    "keep the stack you have untouched."
+                    "commands are Roadshow's own names.  Going back\n"
+                    "means reinstalling Roadshow, AmiTCP or Miami.\n\n"
+                    "Keep my stack leaves bsdsocket.library and\n"
+                    "those commands untouched.  With the netdev\n"
+                    "driver chosen it installs the SANA-II\n"
+                    "genet.device instead: netdev works only with\n"
+                    "the bundled stack, SANA-II with any.\n\n"
+                    @askbool-help
                 )
+                (choices "Replace" "Keep my stack")
                 (default 1)
             )
         )
-        (abort
-            (cat
-                "Installation cancelled: the bundled stack has to\n"
-                "replace bsdsocket.library, and you declined.\n\n"
-                "Run the installer again and choose the SANA-II\n"
-                "driver with 'Leave bsdsocket.library alone'."
+        (
+            (set #install-stack 0)
+            (if #net-netdev
+                (
+                    (set #net-netdev 0)
+                    (set #net-sana2 1)
+                )
             )
         )
     )
@@ -433,17 +495,176 @@
 )
 
 ; ---------------------------------------------------------------------------
+; Other components - asked after USB and the network, the parts most installs
+; are for.  Tools have no boxes: each comes with the component it serves.
+;
+; gic400.library and bcmpcie.library can be installed on their own (for other
+; PCIe software), but any selected driver pulls in the libraries it needs
+; automatically - you can never end up with a driver whose library is missing.
+; So only an EXPERT sees their boxes, unticked; below that the choice string is
+; empty, which hides the box and keeps the bit numbering.
+;
+; openpci.library is the openpci API over bcmpcie.library, for programs such as
+; identify.library that list PCI devices through it.  C/emu68check OPENPCI tells
+; whose LIBS:openpci.library is installed: RC 0 ours, 5 another one, 10 none.
+; Another one is most likely a real PCI board's (Mediator, Prometheus, G-REX),
+; whose software ours would break, so the box is then unticked, and ticking it
+; asks before replacing that library.  Any other RC counts as another one.
+; ---------------------------------------------------------------------------
+
+; Bit layout of the selection mask:
+;   0 gic400.library  1 bcmpcie.library  2 openpci.library  3 nvme
+;   4 videocodec  5 videocore.audio  6 vcjpeg.datatype
+; Default 8 = bit 3 (nvme), plus bit 2 (openpci) unless another openpci.library
+; is installed; libraries derived as needed.  videocodec (vchiq.device,
+; videocodec.library, its backend and tools) is experimental: off.
+; videocore.audio (an AHI driver on vchiq.device) needs videocodec and brings it
+; along; off.  So does vcjpeg.datatype (JPEG pictures through videocodec); off.
+(set #openpci-rc (run "C/emu68check OPENPCI" (safe)))
+(set #openpci-other (AND (<> #openpci-rc 0) (<> #openpci-rc 10)))
+(set #features-default 8)
+(if (NOT #openpci-other) (set #features-default 12))
+(set #choice-gic400 "")
+(set #choice-bcmpcie "")
+(set #help-libs "")
+(if (= @user-level 2)
+    (
+        (set #choice-gic400 "gic400.library  (interrupt controller)")
+        (set #choice-bcmpcie "bcmpcie.library (PCIe bus)")
+        (set #help-libs
+            (cat
+                "gic400.library and bcmpcie.library are needed\n"
+                "by the drivers and are installed automatically\n"
+                "with them - tick a library only if you want it\n"
+                "on its own, with no driver.\n\n"
+            )
+        )
+    )
+)
+(if (= @user-level 0)
+    (set #features #features-default)        ; NOVICE: install the recommended set silently
+    (set #features
+        (askoptions
+            (prompt "Other components:")
+            (help
+                "nvme.device and openpci.library are ticked by\n"
+                "default.  Tools come with what they serve:\n"
+                "nvmeinfo and nvmeadm with nvme.device, lspci\n"
+                "with the PCIe library, VCInfo with videocodec.\n\n"
+                #help-libs
+                "openpci.library lets programs that use the\n"
+                "openpci API, such as identify.library, see the\n"
+                "Pi's PCIe devices.  It is unticked when another\n"
+                "openpci.library is installed - most likely a\n"
+                "PCI board's, which this one would replace.\n\n"
+                "videocodec (VideoCore video and pictures) is\n"
+                "experimental and needs the cma overlay in the\n"
+                "Pi's config.txt, and gpu_mem=192 there for\n"
+                "pictures over 12 megapixels and two videos at\n"
+                "once.\n\n"
+                "videocore.audio is an AHI driver that plays\n"
+                "through the VideoCore to HDMI or the headphone\n"
+                "jack; it needs AHI, and brings videocodec along.\n\n"
+                "vcjpeg.datatype decodes JPEG pictures of about\n"
+                "2 megapixels and more on the VideoCore, for every\n"
+                "program that loads pictures through datatypes;\n"
+                "the rest stay with your JPEG datatype.  It\n"
+                "brings videocodec along.\n\n"
+                @askoptions-help
+            )
+            (choices
+                #choice-gic400
+                #choice-bcmpcie
+                "openpci.library (for identify.library)"
+                "nvme.device     (NVMe storage)"
+                "videocodec      (video, experimental)"
+                "videocore.audio (sound, experimental)"
+                "vcjpeg.datatype (JPEG, experimental)"
+            )
+            (default #features-default)
+        )
+    )
+)
+
+(set #sel-gic400      (IN #features 0))
+(set #sel-bcmpcie     (IN #features 1))
+(set #install-openpci (IN #features 2))
+(set #install-nvme    (IN #features 3))
+(set #install-vchiq   (IN #features 4))
+(set #install-ahi     (IN #features 5))
+(set #install-vcjpeg  (IN #features 6))
+(if (OR #install-ahi #install-vcjpeg) (set #install-vchiq 1))
+
+; Another openpci.library is replaced only when the user says so.
+(if (AND #install-openpci #openpci-other)
+    (set #install-openpci
+        (askbool
+            (prompt
+                (cat
+                    "Another openpci.library is installed in\n"
+                    "LIBS: - most likely the driver of a real PCI\n"
+                    "board (Mediator, Prometheus, G-REX ...).\n\n"
+                    "Installing this one replaces it, and that\n"
+                    "board's software stops working.\n\n"
+                    "Replace it anyway?"
+                )
+            )
+            (help
+                "This openpci.library forwards the openpci API\n"
+                "to bcmpcie.library, the Pi's PCIe bus.  Only\n"
+                "one openpci.library can be installed; keep the\n"
+                "one you have if a PCI board uses it.\n\n"
+                @askbool-help
+            )
+            (default 0)
+        )
+    )
+)
+
+; ---------------------------------------------------------------------------
 ; Dependency resolution (union of explicit selection and derived needs)
 ; ---------------------------------------------------------------------------
-(set #need-bcmpcie (OR #sel-bcmpcie #install-xhci #install-nvme #install-lspci #install-openpci))
+(set #need-bcmpcie (OR #sel-bcmpcie #install-xhci #install-nvme #install-openpci))
+
+; lspci, the PCIe diagnostic tool, comes with bcmpcie.library.  C/emu68check
+; LSPCI tells whose C:lspci is installed, with the RCs of OPENPCI.  Another one
+; is most likely a PCI board's, so it is replaced only when the user says so; a
+; NOVICE keeps it.
+(set #lspci-rc (run "C/emu68check LSPCI" (safe)))
+(set #lspci-other (AND (<> #lspci-rc 0) (<> #lspci-rc 10)))
+(set #install-lspci #need-bcmpcie)
+(if (AND #install-lspci #lspci-other)
+    (if (= @user-level 0)
+        (set #install-lspci 0)
+        (set #install-lspci
+            (askbool
+                (prompt
+                    (cat
+                        "Another lspci is installed in C:, most likely\n"
+                        "a PCI board's (Mediator, Prometheus, G-REX).\n\n"
+                        "The one that comes with bcmpcie.library\n"
+                        "lists the Pi's PCIe bus instead.\n\n"
+                        "Replace it?"
+                    )
+                )
+                (help
+                    "Answer No to keep your lspci as it is;\n"
+                    "bcmpcie.library is installed either way.\n\n"
+                    @askbool-help
+                )
+                (default 0)
+            )
+        )
+    )
+)
 
 ; gic400 is needed by every DRIVER, so install it like any other library in the
-; stack whenever one is selected.  P_copyver still refuses to overwrite an
-; equal or newer LIBS: copy without asking.  Note the LIBS: copy goes unused on
-; a machine whose Emu68 supplies gic400.library from its ROM board (that copy is
-; already in exec's library list, so OpenLibrary never reaches LIBS:) - the
-; closing message says so.  The bundled stack on its own does not need it.
-(set #install-gic400 (OR #need-bcmpcie #install-genet #sel-gic400))
+; stack whenever one is selected.  P_copyver still asks before replacing a newer
+; LIBS: copy.  Note the LIBS: copy goes unused on a machine whose Emu68 supplies
+; gic400.library from its ROM board (that copy is already in exec's library
+; list, so OpenLibrary never reaches LIBS:) - the closing message says so.  The
+; bundled stack on its own does not need it.
+(set #install-gic400 (OR #need-bcmpcie #install-genet #install-vchiq #sel-gic400))
 
 ; The stack can be installed with no genet at all (an Ethernet SANA-II card is
 ; reason enough), so it counts as a component in its own right.
@@ -475,7 +696,7 @@
 (if #need-bcmpcie    (set #need-libs (+ #need-libs (getsize "LIBS/bcmpcie.library"))))
 (if #install-openpci (set #need-libs (+ #need-libs (getsize "LIBS/openpci.library"))))
 (if #usb-context     (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci.device"))))
-(if #usb-legacy      (set #need-devs (+ #need-devs (getsize "Storage/DEVS/USBHardware/xhci.device"))))
+(if #usb-legacy      (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci-legacy.device"))))
 (if #net-netdev      (set #need-devs (+ #need-devs (getsize "DEVS/Networks/genet.device"))))
 (if #net-sana2
     (
@@ -491,6 +712,27 @@
     )
 )
 (if #install-lspci   (set #need-c (+ #need-c (getsize "C/lspci"))))
+(if #install-vchiq
+    (
+        (set #need-devs (+ #need-devs (getsize "DEVS/vchiq.device")))
+        (set #need-libs (+ #need-libs (getsize "LIBS/videocodec.library")))
+        (set #need-libs (+ #need-libs (getsize "LIBS/videocodec/videocore.codec")))
+        (set #need-c    (+ #need-c (getsize "C/VCInfo")))
+    )
+)
+(if #install-ahi
+    (
+        (set #need-devs (+ #need-devs (getsize "DEVS/AHI/videocore.audio")))
+        (set #need-devs (+ #need-devs (getsize "DEVS/AudioModes/VIDEOCORE")))
+    )
+)
+; SYS:Classes and SYS:Storage are on the system volume, with SYS:Libs: counted with LIBS:.
+(if #install-vcjpeg
+    (
+        (set #need-libs (+ #need-libs (getsize "Classes/DataTypes/vcjpeg.datatype")))
+        (set #need-libs (+ #need-libs (getsize "Storage/DataTypes/VCJPEG")))
+    )
+)
 (if #net-netdev (set #need-c (+ #need-c (getsize "C/netdev-stats"))))
 (if #install-stack
     (
@@ -530,35 +772,79 @@
 )
 
 ; ---------------------------------------------------------------------------
+; Summary - the last screen before anything is copied, at every user level: a
+; NOVICE sees what the defaults chose, the others also the libraries their
+; choices pulled in.  One line per topic, at most seven, so the screen stays
+; within its ten lines.  Proceed copies; Abort leaves the system as it was.
+; ---------------------------------------------------------------------------
+(set #sum "Ready to install (Proceed starts copying):\n\n")
+(if #install-xhci
+    (
+        (set #sum-usb "xhci-legacy.device")
+        (if #usb-context
+            (if #usb-legacy
+                (set #sum-usb "xhci.device, xhci-legacy.device")
+                (set #sum-usb "xhci.device")
+            )
+        )
+        (set #sum (cat #sum "* USB: " #sum-usb "\n"))
+    )
+)
+(if #net-netdev (set #sum (cat #sum "* Ethernet: genet.device (netdev)\n")))
+(if #net-sana2  (set #sum (cat #sum "* Ethernet: genet.device (SANA-II)\n")))
+(if #install-stack
+    (
+        (set #sum-stack ", replacing your stack")
+        (if #stack-ours (set #sum-stack ", an update"))
+        (if (= #bsd-rc 10) (set #sum-stack ""))
+        (set #sum (cat #sum "* TCP/IP: lwip-amiga" #sum-stack "\n"))
+    )
+)
+(if #install-nvme (set #sum (cat #sum "* NVMe: nvme.device, nvmeinfo, nvmeadm\n")))
+(if #install-gic400
+    (
+        (set #sum-libs "gic400")
+        (if #need-bcmpcie (set #sum-libs (cat #sum-libs ", bcmpcie")))
+        (if #install-openpci (set #sum-libs (cat #sum-libs ", openpci")))
+        (set #sum (cat #sum "* Libraries: " #sum-libs "\n"))
+    )
+)
+(if #install-lspci (set #sum (cat #sum "* lspci (PCIe diagnostic tool)\n")))
+(if #install-vchiq
+    (
+        (set #sum-video "videocodec")
+        (if #install-ahi (set #sum-video (cat #sum-video ", videocore.audio")))
+        (if #install-vcjpeg (set #sum-video (cat #sum-video ", vcjpeg")))
+        (set #sum (cat #sum "* Video: " #sum-video "\n"))
+    )
+)
+(message #sum (all))
+
+; ---------------------------------------------------------------------------
 ; Installation
 ; ---------------------------------------------------------------------------
 (complete 0)
 
-; Track whether bcmpcie.library was actually (re)installed, so lspci can follow it
-; (selecting lspci forces #need-bcmpcie, so this is always set when lspci is on).
-(set #did-bcmpcie 0)
+; Track whether the installed bcmpcie.library is the bundled build, so lspci can
+; follow it (lspci comes only with bcmpcie, so this is always set when lspci is
+; on).
+(set #bundled-bcmpcie 0)
 
 ; Libraries -> LIBS:
 (if #install-gic400  (P_copyver "LIBS/gic400.library"  "LIBS:" "gic400.library"))
-(if #need-bcmpcie    (set #did-bcmpcie (P_copyver "LIBS/bcmpcie.library" "LIBS:" "bcmpcie.library")))
+(if #need-bcmpcie    (set #bundled-bcmpcie (P_copyver "LIBS/bcmpcie.library" "LIBS:" "bcmpcie.library")))
 (if #install-openpci (P_copyver "LIBS/openpci.library" "LIBS:" "openpci.library"))
 (complete 30)
 
 ; Devices -> DEVS:
-; xhci.device - force-copy the chosen line (a line switch is a same-name version
-; change, so version-checked copy would refuse the 6.x -> 5.x direction).
-(if #install-xhci
-    (
-        (makedir "DEVS:USBHardware")
-        (if #usb-context
-            (P_copyforce "DEVS/USBHardware/xhci.device" "DEVS:USBHardware")
-            (P_copyforce "Storage/DEVS/USBHardware/xhci.device" "DEVS:USBHardware")
-        )
-    )
-)
+; The two xhci lines have their own names, so each is a version-checked copy; the
+; 6.x driver replacing a 5.x xhci.device is an upgrade by version.
+(if #install-xhci (makedir "DEVS:USBHardware"))
+(if #usb-context (P_copyver "DEVS/USBHardware/xhci.device" "DEVS:USBHardware" "xhci.device"))
+(if #usb-legacy  (P_copyver "DEVS/USBHardware/xhci-legacy.device" "DEVS:USBHardware" "xhci-legacy.device"))
 
 ; genet.device - force-copy the chosen variant (a variant switch is a same-name
-; version change, so version-checked copy would refuse a downgrade).
+; version change, so a version-checked copy would ask before the downgrade).
 (if #install-genet
     (
         (makedir "DEVS:Networks")
@@ -577,18 +863,70 @@
 
 (if #install-nvme
     (
-        (set #did-nvme (P_copyver "DEVS/nvme.device" "DEVS:" "nvme.device"))
+        (set #bundled-nvme (P_copyver "DEVS/nvme.device" "DEVS:" "nvme.device"))
         ; nvmeinfo / nvmeadm - diagnostic and admin tools, kept in lockstep with the
-        ; driver: (re)install them when the driver was just (re)installed, or when
-        ; they are missing entirely (keeping an existing driver must not leave the
+        ; driver: install them when the installed driver is the bundled build, or
+        ; when they are missing entirely (keeping a newer driver must not leave the
         ; user with no tools).  Same rule as lspci below.
-        (if (OR #did-nvme
+        (if (OR #bundled-nvme
                 (OR (NOT (exists "C:nvmeinfo" (noreq)))
                     (NOT (exists "C:nvmeadm" (noreq)))))
             (
                 (P_copyforce "C/nvmeinfo" "C:")
                 (P_copyforce "C/nvmeadm" "C:")
             )
+        )
+    )
+)
+
+; VideoCore video: vchiq.device, videocodec.library and its backend in
+; LIBS:videocodec/, and VCInfo, kept in lockstep with the library as nvme's
+; tools are with the driver.  The test rig (Developer/Tools: VPUTool, VPUPlay)
+; and the examples (Developer/Examples/videocodec) stay in the archive.
+(if #install-vchiq
+    (
+        (P_copyver "DEVS/vchiq.device" "DEVS:" "vchiq.device")
+        (set #bundled-videocodec (P_copyver "LIBS/videocodec.library" "LIBS:" "videocodec.library"))
+        (makedir "LIBS:videocodec")
+        (P_copyver "LIBS/videocodec/videocore.codec" "LIBS:videocodec" "videocore.codec")
+        (if (OR #bundled-videocodec (NOT (exists "C:VCInfo" (noreq))))
+            (P_copyforce "C/VCInfo" "C:")
+        )
+    )
+)
+
+; VideoCore sound: the AHI driver and its mode file, always replaced by the
+; bundled pair (lib_Version is AHI's interface number, not a release to compare).
+(if #install-ahi
+    (
+        (if (NOT (exists "DEVS:AHI" (noreq))) (makedir "DEVS:AHI"))
+        (if (NOT (exists "DEVS:AudioModes" (noreq))) (makedir "DEVS:AudioModes"))
+        (P_copyforce "DEVS/AHI/videocore.audio" "DEVS:AHI")
+        (P_copyforce "DEVS/AudioModes/VIDEOCORE" "DEVS:AudioModes")
+    )
+)
+
+; VideoCore pictures: the class, and its descriptor in SYS:Storage/DataTypes, not
+; DEVS:DataTypes.  datatypes.library tries, among the descriptors with a function
+; and no mask, the one added last first, so VCJPEG must be added after the
+; system's JPEG descriptors: from S:User-Startup, which runs after
+; Startup-Sequence's AddDataTypes REFRESH.  Removing the line restores them.
+(if #install-vcjpeg
+    (
+        (P_copyver "Classes/DataTypes/vcjpeg.datatype" "SYS:Classes/DataTypes" "vcjpeg.datatype")
+        (if (NOT (exists "SYS:Storage/DataTypes" (noreq))) (makedir "SYS:Storage/DataTypes"))
+        (P_copyforce "Storage/DataTypes/VCJPEG" "SYS:Storage/DataTypes")
+        (startup "vcjpeg.datatype"
+            (prompt
+                (cat
+                    "vcjpeg.datatype takes JPEG pictures once its\n"
+                    "descriptor is added at boot, after the\n"
+                    "system's.  Add this line to S:User-Startup?\n\n"
+                    "AddDataTypes SYS:Storage/DataTypes/VCJPEG QUIET"
+                )
+            )
+            (help @startup-help)
+            (command "AddDataTypes SYS:Storage/DataTypes/VCJPEG QUIET")
         )
     )
 )
@@ -682,12 +1020,13 @@
 
 (complete 80)
 
-; Diagnostic tool -> C:.  Keep lspci in lockstep with bcmpcie.library: (re)install
-; it when bcmpcie was just (re)installed, or when no lspci exists yet (honour an
-; explicit selection).  Skip only when bcmpcie was kept AND an lspci already
-; exists - that existing tool pairs with the library we left in place.
+; Diagnostic tool -> C:.  Keep our lspci in lockstep with bcmpcie.library: install
+; it when the installed bcmpcie is the bundled build.  Skip only when a newer
+; bcmpcie was kept AND our lspci already exists - that tool pairs with the
+; library we left in place.  With no lspci, or another one the user agreed to
+; replace (#install-lspci is clear when they did not), always install it.
 (if #install-lspci
-    (if (OR #did-bcmpcie (NOT (exists "C:lspci" (noreq))))
+    (if (OR #bundled-bcmpcie (<> #lspci-rc 0))
         (P_copyforce "C/lspci" "C:")
     )
 )
@@ -697,29 +1036,56 @@
 ; Done
 ; ---------------------------------------------------------------------------
 ; One headline, then at most one two-line note per topic that was installed,
-; then the ReadMe pointer.  The worst case (USB + Ethernet + gic400) is ten
-; rendered lines - the whole budget.  Any note added here must displace
-; another one.
+; then the ReadMe pointer.  The worst case (USB + Ethernet + gic400 or video) is
+; ten rendered lines - the whole budget.  Any note added here must displace
+; another one: the video note displaces the gic400 one (video installs gic400).
 ;
-; That holds because at most ONE net note can fire.  The usb-* pair is
-; mutually exclusive by construction, but the two net notes are not: since
+; That holds because at most ONE usb note and ONE net note can fire.  The usb
+; notes are an if/else chain; the two net notes are not exclusive: since
 ; 2.1 the SANA-II driver can be installed together with the bundled stack, so
 ; the SANA-II note is explicitly suppressed when the stack note already
 ; covers the machine.  Do not drop that condition.
 (set #done-msg "Installation complete - reboot to activate.\n\n")
-(if #usb-context
-    (set #done-msg
-        (cat #done-msg
-            "* xhci 6.x needs Poseidon for AmigaOS 6.x; add\n"
-            "  its units in Trident - see the ReadMe\n"
+; A Poseidon 4.x still set to its old xhci.device (5.x) comes first: it has a step to do -
+; a must when the 6.x driver replaced that file (#usb-context here means the guard
+; was answered Yes), else only to get the update.
+(if (AND #usb-legacy (AND #xhci-old-5x #psd-classic))
+    (if #usb-context
+        (set #done-msg
+            (cat #done-msg
+                "* Poseidon: select xhci-legacy.device in\n"
+                "  Trident - xhci.device is now the 6.x one\n"
+            )
+        )
+        (set #done-msg
+            (cat #done-msg
+                "* Poseidon: select xhci-legacy.device in\n"
+                "  Trident to use the update - see the ReadMe\n"
+            )
         )
     )
-)
-(if #usb-legacy
-    (set #done-msg
-        (cat #done-msg
-            "* xhci 5.x needs a Poseidon USB stack; add\n"
-            "  its units in Trident - see the ReadMe\n"
+    (if (AND #usb-context #usb-legacy)
+        (set #done-msg
+            (cat #done-msg
+                "* USB: xhci.device (Neptune), xhci-legacy.device\n"
+                "  (Poseidon 4.x) - see the ReadMe\n"
+            )
+        )
+        (if #usb-context
+            (set #done-msg
+                (cat #done-msg
+                    "* xhci.device needs Neptune 6.x; add its units\n"
+                    "  in Neptune USB - see the ReadMe\n"
+                )
+            )
+            (if #usb-legacy
+                (set #done-msg
+                    (cat #done-msg
+                        "* xhci-legacy.device needs a USB stack; add\n"
+                        "  its units in Trident or Neptune USB\n"
+                    )
+                )
+            )
         )
     )
 )
@@ -739,11 +1105,27 @@
         )
     )
 )
-(if #install-gic400
+(if #install-ahi
     (set #done-msg
         (cat #done-msg
-            "* LIBS:gic400.library goes unused if Emu68\n"
-            "  supplies its own copy - harmless\n"
+            "* sound: after a reboot, pick a VideoCore mode\n"
+            "  in the AHI preferences\n"
+        )
+    )
+)
+(if #install-vchiq
+    (set #done-msg
+        (cat #done-msg
+            "* video: dtoverlay=cma in the Pi's config.txt,\n"
+            "  gpu_mem=192 for large pictures - see ReadMe\n"
+        )
+    )
+    (if #install-gic400
+        (set #done-msg
+            (cat #done-msg
+                "* LIBS:gic400.library goes unused if Emu68\n"
+                "  supplies its own copy - harmless\n"
+            )
         )
     )
 )
