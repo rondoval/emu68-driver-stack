@@ -1,3 +1,158 @@
+# Release notes — Emu68 driver stack 2.3.0
+
+Changes since 2.2.0. The Pi's VideoCore now works for the Amiga: hardware video,
+JPEG pictures, sound and screen recording, all experimental. USB 3 reads and NVMe
+writes are faster, HD webcams work, older network programs run again, and the
+installer asks far less on an update.
+
+---
+
+## Before you upgrade
+
+- **The 5.x USB driver for classic Poseidon 4.x is now `xhci-legacy.device`** (5.6).
+  The 6.x driver for Neptune keeps `xhci.device`, so the two can be installed side
+  by side - for a machine that boots either stack. Nothing changes for Neptune.
+- **On Poseidon 4.x:** your current `xhci.device` (5.5 or older) is left alone and
+  keeps working. To use 5.6, select `xhci-legacy.device` on Trident's Hardware page,
+  save, then delete `DEVS:USBHardware/xhci.device`. The installer only replaces that
+  file with the 6.x driver if you ask for it, and tells you to switch Trident then.
+
+---
+
+## Component versions in this release
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `emu68-common` (support library) | **2.3.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v2.3.0/RELEASE-NOTES.md) |
+| `gic400.library` | **1.10** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.10/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.6** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.6/RELEASE-NOTES.md) |
+| `openpci.library` | **45.13** | bundled with `bcmpcie.library` |
+| `xhci.device` (6.x) | **6.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.4/RELEASE-NOTES.md) |
+| `xhci-legacy.device` (5.x) | **5.6** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.6/RELEASE-NOTES.md) |
+| `genet.device` (4.x, netdev) | **4.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v4.4/RELEASE-NOTES.md) |
+| `genet.device` (3.x, SANA-II) | **3.17** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.17/RELEASE-NOTES.md) |
+| `nvme.device` | **1.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.7/RELEASE-NOTES.md) |
+| lwip-amiga (TCP/IP stack) | **1.8** — ships `bsdsocket.library` **4.108** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.8/RELEASE-NOTES.md) |
+| VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype` | **0.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-library/blob/v0.3/RELEASE-NOTES.md) |
+
+---
+
+## New: the VideoCore (experimental)
+
+The installer offers three parts, unticked. All need an Emu68 newer than
+1.1.0-beta.1 with the `cma` overlay (`dtoverlay=cma` in the Pi's `config.txt`), so
+take the `-rangeops` archive. `VCInfo` checks the setup and says what to fix.
+
+- **`videocodec`: hardware video and pictures.** `videocodec.library` decodes H.264
+  and MJPEG video and JPEG, PNG, GIF, BMP, TGA and PPM pictures on the Pi's VideoCore,
+  encodes H.264 and JPEG, and scales pictures, while the 68k stays almost idle. A version of
+  MintVID plays videos through it (MintVID itself may never carry this: see the
+  ReadMe).
+- **`VCGrab`** comes with it: a commodity that records an RTG screen to an MKV file,
+  and grabs stills, at about 5% of the 68k for 1080p at 30 fps.
+- **`vcjpeg.datatype`: faster JPEG pictures in every program** that loads pictures
+  through datatypes. It takes baseline JPEGs of about 2 megapixels and more and
+  leaves the rest to your JPEG datatype. Needs AmigaOS 3.2.
+- **`videocore.audio`: sound through the Pi.** An AHI driver that plays to HDMI0,
+  HDMI1 or the headphone jack, in stereo or 7.1. Needs AHI.
+
+The default `gpu_mem` plays one 1080p video or records a 1080p screen; `gpu_mem=128`
+adds a second video, a video during a recording and pictures over 24 megapixels.
+
+---
+
+## What changed
+
+### USB
+
+- **USB 3 reads are faster.** Large reads into ordinary memory are no longer copied
+  whole: on a Pi 4 a UAS SSD reads 277 MB/s through PFS3 (235 before), a USB 3 stick
+  114 MB/s (107).
+- **HD webcams work,** and a camera stream takes about a quarter of the CPU instead
+  of about 70%.
+- **Errors do less damage.** A passing bus error no longer fails a transfer, and a
+  device that refuses one transfer loses only that one.
+- **Two USB drivers can no longer run the built-in controller at once.** Unit 0 is
+  reserved like the PCIe controllers: the second driver is refused.
+- **Many fixes** to transfers lost or left waiting around aborts, suspends and full
+  rings, to devices behind hubs, and to memory corruption when an interface switches
+  its alternate setting: see `xhci.device` 6.4's notes.
+
+### Storage
+
+- **NVMe writes are faster from ordinary buffers,** which are no longer copied: 1 MB
+  writes through PFS3 run at 311 MB/s (266 before).
+- **`fat95` uses its fast direct transfers** on FAT partitions of MBR and GPT disks.
+- **NTFS and exFAT partitions** get the 64 KB of stack their filesystems need.
+
+### Networking
+
+- **Older network programs work again.** Programs written for AmiTCP can read the
+  interface address (`GetIPAddress` no longer prints "N/A"), and `NetShutdown` no
+  longer hangs on daemons that wait for Ctrl-C. Contributed by Renaud Schweingruber
+  (TuKo1982).
+- **Programs no longer miss signals** while they wait on sockets.
+- **Bad settings no longer turn into odd ones.** In `genet.prefs` a value that is not
+  a number leaves the default, and in `netstack.prefs` a name too long to hold is
+  refused with a warning in the log rather than cut short.
+
+### All drivers
+
+- A program that calls `CloseDevice()` after a failed `OpenDevice()` no longer upsets
+  `xhci.device`, `genet.device` or `nvme.device`.
+
+### Installation
+
+- **Switching archives replaces the drivers without asking.** The standard,
+  `-rangeops` and `-serial` archives of a release carry the same versions, and the
+  installer used to ask before replacing each one, suggesting No. It now compares the
+  files: the same file is left alone, a different build is replaced. It asks only
+  before putting back an older version than the one installed.
+- **The Ethernet and TCP/IP questions start at what you have installed.** With no
+  `genet.device` yet, the standard archive suggests the SANA-II driver and the
+  `-rangeops` archive netdev, as the ReadMe recommends.
+- **Updating the bundled stack no longer asks to replace your stack.** When another
+  stack is installed you can now keep it: the installer then takes the SANA-II driver
+  instead of netdev, rather than cancelling.
+- **USB and the network come first,** then a checklist of the other components. The
+  first screen names the archive you are installing from, and on the standard archive
+  says when your Emu68 would run the `-rangeops` one. A last screen lists what will be
+  installed before anything is copied.
+- **`openpci.library` is in the checklist, ticked,** for programs such as
+  `identify.library`. When another `openpci.library` is installed, most likely a PCI
+  board's, it starts unticked and the installer asks before replacing it.
+- **`lspci` comes with `bcmpcie.library`** instead of having its own box, and the
+  installer asks before replacing another `lspci`. `gic400.library` and
+  `bcmpcie.library` have boxes only in Expert mode; the drivers bring them along
+  anyway.
+
+### For developers
+
+- The archive's `Developer/` drawer gains `gic400.library`'s autodoc and FD file,
+  contributed by flype (flype44), the `videocodec.library` and `vchiq.device` headers,
+  and example sources.
+- `emu68-common` 2.1 to 2.3: see its notes.
+
+---
+
+## Known limitations
+
+- One network interface at a time besides loopback.
+- Non-Ethernet SANA-II drivers (PPP, SLIP, Token Ring, ArcNet) are not
+  supported.
+- `ping RECORDROUTE`, published/proxy `arp` entries and Roadshow's
+  `SBTC_LOG_FILE_NAME` are not implemented.
+- The receive mode is chosen per interface, not per connection: a machine that
+  downloads and answers requests at the same time gets one setting for both.
+- Two PCIe devices that share one INTx line: only the first can use INTx. MSI
+  and MSI-X are not affected.
+- **The VideoCore parts:** H.264 is 8-bit, up to 1920x1080, and MJPEG goes up to 4096
+  wide and 1920 tall. If the VideoCore stops answering, press Ctrl-Amiga-Amiga:
+  `C:Reboot` restarts only the 68k. `VCGrab` has no sound and no mouse pointer. The
+  full list is in `Documentation/emu68-vchiq-library/RELEASE-NOTES.md`.
+
+---
+
 # Release notes — Emu68 driver stack 2.2.0
 
 Changes since 2.1.1. Network replies come back twice as fast, the network

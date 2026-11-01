@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 2.2.0 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.3.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -407,8 +407,8 @@ if(EMU68_FORCE_LVO_CACHE_OPS)
 else()
     set(RANGEOPS_BUILD 1)
     set(CACHE_OPS_DESCRIPTION
-        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions, which are not part of official Emu68 - a\n  custom build is needed.  On any other firmware xhci.device (6.x),\n  both genet.device builds (netdev 4.x and SANA-II 3.x) and\n  nvme.device notice this at boot and refuse to load rather than\n  crash (the -serial build logs why); use the standard archive\n  there.")
-    set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (a custom build - not official Emu68)\n    https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops")
+        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions: one newer than 1.1.0-beta.1, or a custom\n  build.  On any other firmware xhci.device (6.x), both\n  genet.device builds (netdev 4.x and SANA-II 3.x) and\n  nvme.device notice this at boot and refuse to load rather than\n  crash (the -serial build logs why); use the standard archive\n  there.")
+    set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (newer than 1.1.0-beta.1, or a custom build)\n    https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops")
 endif()
 
 # Suffix the package name by cache-op flavor and backend so a release can ship
@@ -492,6 +492,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
   vchiq.device           ${VCHIQ_VERSION}
   videocodec.library     ${VCHIQ_VERSION}
   videocore.audio        ${VCHIQ_VERSION}
+  vcjpeg.datatype        ${VCHIQ_VERSION}
 
 Archive variants:
 
@@ -504,11 +505,13 @@ Which one to take:
 
   Emu68            USB stack     Archive             Ethernet drv  TCP/IP     USB
   ---------------  ------------  ------------------  ------------  ---------  ---
-  official 1.1a1+  Poseidon 4.x  <ver>.lha           SANA-II 3.x   any        5.x
-  official 1.1a1+  Neptune 6.x   <ver>.lha           SANA-II 3.x   any        6.x
-  custom+dcache    Poseidon 4.x  <ver>-rangeops.lha  netdev 4.x    bundled    5.x
-  custom+dcache    Neptune 6.x   <ver>-rangeops.lha  netdev 4.x    bundled    6.x
+  without dcache   Poseidon 4.x  <ver>.lha           SANA-II 3.x   any        5.x
+  without dcache   Neptune 6.x   <ver>.lha           SANA-II 3.x   any        6.x
+  with dcache      Poseidon 4.x  <ver>-rangeops.lha  netdev 4.x    bundled    5.x
+  with dcache      Neptune 6.x   <ver>-rangeops.lha  netdev 4.x    bundled    6.x
 
+'without dcache' = official Emu68 releases, 1.1 alpha.1 to 1.1.0-beta.1.
+'with dcache' = an Emu68 newer than 1.1.0-beta.1, or a custom build.
 'any' = your existing Roadshow/AmiTCP/Miami, or the bundled bsdsocket.library:
 since lwip-amiga 1.5 the bundled stack drives Ethernet-type SANA-II drivers as
 well as the netdev one, so the driver and the stack are separate choices and
@@ -517,8 +520,8 @@ besides loopback.
 
 The standard archives run on any Emu68 from 1.1 alpha.1 on.  The -rangeops
 archives hold the same drivers built to use the dcache extensions and are
-considerably faster, but those extensions are not part of official Emu68 -
-they need a custom Emu68 build:
+considerably faster, but official releases up to 1.1.0-beta.1 lack those
+extensions, so they need a newer Emu68 or a custom build:
 
   https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
 
@@ -526,6 +529,10 @@ On any other firmware the -rangeops xhci/genet/nvme drivers refuse to load
 rather than crash, so use the standard archives there.  Without the extensions
 the bundled TCP/IP stack is slower than the SANA-II driver with Roadshow,
 AmiTCP or Miami - which is why the standard rows above pick SANA-II.
+
+The VideoCore parts (video, JPEG pictures, sound; experimental) need an Emu68
+newer than 1.1.0-beta.1, which has the extensions too, so for those take the
+-rangeops archives.
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component

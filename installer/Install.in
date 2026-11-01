@@ -47,6 +47,8 @@
 ; Helper procedures
 ; ---------------------------------------------------------------------------
 
+; AND and OR are documented with two operands: nest them, never list three.
+
 ; P_verstr - "version.revision" text of a getversion result.
 (procedure P_verstr #vs_ver
     (cat (shiftright #vs_ver 16) "." (BITAND #vs_ver 65535))
@@ -113,8 +115,8 @@
 ; no version check.  Used for the CLI tools (kept in lockstep with the binary they
 ; talk to) and for the two files that can legitimately be DOWNGRADED: the chosen
 ; genet.device variant (switching netdev 4.x -> SANA-II 3.x is a same-name version
-; downgrade P_copyver would ask about) and the lwip-amiga bsdsocket.library (which must
-; replace whatever incompatible bsdsocket a third-party stack installed).
+; downgrade P_copyver would ask about) and the lwip-amiga bsdsocket.library (which
+; must replace whatever incompatible bsdsocket a third-party stack installed).
 (procedure P_copyforce #ct_src #ct_destdir
     (copyfiles
         (prompt (cat "Installing " (fileonly #ct_src) "..."))
@@ -193,8 +195,8 @@
                     "does not support, so they would refuse to\n"
                     "load after installation.\n\n"
                     "Install the standard (non-rangeops) archive,\n"
-                    "or boot a custom Emu68 build carrying the\n"
-                    "dcache extensions and try again."
+                    "or boot an Emu68 with the dcache extensions\n"
+                    "and try again."
                 )
             )
         )
@@ -206,9 +208,9 @@
                                 "devicetree.resource), so the firmware feature\n"
                                 "these drivers need cannot be verified.\n\n"
                                 "If you are preparing a disk for a PiStorm\n"
-                                "machine, make sure it boots a custom Emu68\n"
-                                "carrying the dcache extensions - otherwise\n"
-                                "use the standard archive.\n\n"
+                                "machine, make sure it boots an Emu68 with the\n"
+                                "dcache extensions - otherwise use the standard\n"
+                                "archive.\n\n"
                                 "Continue installing anyway?"
                             )
                         )
@@ -518,12 +520,18 @@
 ; Default 8 = bit 3 (nvme), plus bit 2 (openpci) unless another openpci.library
 ; is installed; libraries derived as needed.  videocodec (vchiq.device,
 ; videocodec.library, its backend and tools) is experimental: off.
-; videocore.audio (an AHI driver on vchiq.device) needs videocodec and brings it
-; along; off.  So does vcjpeg.datatype (JPEG pictures through videocodec); off.
+; videocore.audio (an AHI driver) needs only vchiq.device, which it brings with
+; VCInfo to check the setup; off.  vcjpeg.datatype (JPEG pictures through
+; videocodec) brings videocodec along; off.
+; Each of the three starts ticked once installed, so that an upgrade replaces it;
+; videocodec goes by its library, as the sound alone brings vchiq.device too.
 (set #openpci-rc (run "C/emu68check OPENPCI" (safe)))
 (set #openpci-other (AND (<> #openpci-rc 0) (<> #openpci-rc 10)))
 (set #features-default 8)
 (if (NOT #openpci-other) (set #features-default 12))
+(if (exists "LIBS:videocodec.library" (noreq)) (set #features-default (+ #features-default 16)))
+(if (exists "DEVS:AHI/videocore.audio" (noreq)) (set #features-default (+ #features-default 32)))
+(if (exists "SYS:Classes/DataTypes/vcjpeg.datatype" (noreq)) (set #features-default (+ #features-default 64)))
 (set #choice-gic400 "")
 (set #choice-bcmpcie "")
 (set #help-libs "")
@@ -548,9 +556,11 @@
             (prompt "Other components:")
             (help
                 "nvme.device and openpci.library are ticked by\n"
-                "default.  Tools come with what they serve:\n"
+                "default, and the VideoCore parts once they are\n"
+                "installed.  Tools come with what they serve:\n"
                 "nvmeinfo and nvmeadm with nvme.device, lspci\n"
-                "with the PCIe library, VCInfo with videocodec.\n\n"
+                "with the PCIe library, VCInfo and VCGrab with\n"
+                "videocodec.\n\n"
                 #help-libs
                 "openpci.library lets programs that use the\n"
                 "openpci API, such as identify.library, see the\n"
@@ -559,12 +569,13 @@
                 "PCI board's, which this one would replace.\n\n"
                 "videocodec (VideoCore video and pictures) is\n"
                 "experimental and needs the cma overlay in the\n"
-                "Pi's config.txt, and gpu_mem=192 there for\n"
-                "pictures over 12 megapixels and two videos at\n"
+                "Pi's config.txt, and gpu_mem=128 there for\n"
+                "pictures over 24 megapixels and two videos at\n"
                 "once.\n\n"
                 "videocore.audio is an AHI driver that plays\n"
                 "through the VideoCore to HDMI or the headphone\n"
-                "jack; it needs AHI, and brings videocodec along.\n\n"
+                "jack; it needs AHI, and brings vchiq.device and\n"
+                "VCInfo along.\n\n"
                 "vcjpeg.datatype decodes JPEG pictures of about\n"
                 "2 megapixels and more on the VideoCore, for every\n"
                 "program that loads pictures through datatypes;\n"
@@ -593,7 +604,8 @@
 (set #install-vchiq   (IN #features 4))
 (set #install-ahi     (IN #features 5))
 (set #install-vcjpeg  (IN #features 6))
-(if (OR #install-ahi #install-vcjpeg) (set #install-vchiq 1))
+(if #install-vcjpeg (set #install-vchiq 1))
+(set #install-link (OR #install-vchiq #install-ahi)) ; vchiq.device and VCInfo
 
 ; Another openpci.library is replaced only when the user says so.
 (if (AND #install-openpci #openpci-other)
@@ -624,7 +636,7 @@
 ; ---------------------------------------------------------------------------
 ; Dependency resolution (union of explicit selection and derived needs)
 ; ---------------------------------------------------------------------------
-(set #need-bcmpcie (OR #sel-bcmpcie #install-xhci #install-nvme #install-openpci))
+(set #need-bcmpcie (OR #sel-bcmpcie (OR #install-xhci (OR #install-nvme #install-openpci))))
 
 ; lspci, the PCIe diagnostic tool, comes with bcmpcie.library.  C/emu68check
 ; LSPCI tells whose C:lspci is installed, with the RCs of OPENPCI.  Another one
@@ -664,7 +676,7 @@
 ; gic400.library from its ROM board (that copy is already in exec's library
 ; list, so OpenLibrary never reaches LIBS:) - the closing message says so.  The
 ; bundled stack on its own does not need it.
-(set #install-gic400 (OR #need-bcmpcie #install-genet #install-vchiq #sel-gic400))
+(set #install-gic400 (OR #need-bcmpcie (OR #install-genet (OR #install-link #sel-gic400))))
 
 ; The stack can be installed with no genet at all (an Ethernet SANA-II card is
 ; reason enough), so it counts as a component in its own right.
@@ -712,12 +724,20 @@
     )
 )
 (if #install-lspci   (set #need-c (+ #need-c (getsize "C/lspci"))))
-(if #install-vchiq
+(if #install-link
     (
         (set #need-devs (+ #need-devs (getsize "DEVS/vchiq.device")))
+        (set #need-c    (+ #need-c (getsize "C/VCInfo")))
+    )
+)
+; SYS:Tools, SYS:Classes and SYS:Storage are on the system volume: counted with
+; LIBS:, which is SYS:Libs.
+(if #install-vchiq
+    (
         (set #need-libs (+ #need-libs (getsize "LIBS/videocodec.library")))
         (set #need-libs (+ #need-libs (getsize "LIBS/videocodec/videocore.codec")))
-        (set #need-c    (+ #need-c (getsize "C/VCInfo")))
+        (set #need-libs (+ #need-libs (getsize "Tools/Commodities/VCGrab")))
+        (set #need-libs (+ #need-libs (getsize "Tools/Commodities/VCGrab.info")))
     )
 )
 (if #install-ahi
@@ -726,7 +746,6 @@
         (set #need-devs (+ #need-devs (getsize "DEVS/AudioModes/VIDEOCORE")))
     )
 )
-; SYS:Classes and SYS:Storage are on the system volume, with SYS:Libs: counted with LIBS:.
 (if #install-vcjpeg
     (
         (set #need-libs (+ #need-libs (getsize "Classes/DataTypes/vcjpeg.datatype")))
@@ -810,12 +829,13 @@
     )
 )
 (if #install-lspci (set #sum (cat #sum "* lspci (PCIe diagnostic tool)\n")))
-(if #install-vchiq
+(if #install-link
     (
-        (set #sum-video "videocodec")
+        (set #sum-video "vchiq.device")
+        (if #install-vchiq (set #sum-video "videocodec"))
         (if #install-ahi (set #sum-video (cat #sum-video ", videocore.audio")))
         (if #install-vcjpeg (set #sum-video (cat #sum-video ", vcjpeg")))
-        (set #sum (cat #sum "* Video: " #sum-video "\n"))
+        (set #sum (cat #sum "* VideoCore: " #sum-video "\n"))
     )
 )
 (message #sum (all))
@@ -879,20 +899,31 @@
     )
 )
 
-; VideoCore video: vchiq.device, videocodec.library and its backend in
-; LIBS:videocodec/, and VCInfo, kept in lockstep with the library as nvme's
-; tools are with the driver.  The test rig (Developer/Tools: VPUTool, VPUPlay)
-; and the examples (Developer/Examples/videocodec) stay in the archive.
+; VideoCore: vchiq.device for any of the three parts; videocodec.library, its
+; backend in LIBS:videocodec/ and VCGrab for all but the sound alone; VCInfo, kept
+; in lockstep as nvme's tools are with the driver.  VCGrab is a commodity, so it
+; goes with the others; its icon only when there is none, so that edited tooltypes
+; stay.  The test rig (Developer/Tools: VCTest, VPUPlay) and the examples
+; (Developer/Examples/videocodec) stay in the archive.
+(set #bundled-vchiq 0)
+(set #bundled-videocodec 0)
+(if #install-link (set #bundled-vchiq (P_copyver "DEVS/vchiq.device" "DEVS:" "vchiq.device")))
 (if #install-vchiq
     (
-        (P_copyver "DEVS/vchiq.device" "DEVS:" "vchiq.device")
         (set #bundled-videocodec (P_copyver "LIBS/videocodec.library" "LIBS:" "videocodec.library"))
         (makedir "LIBS:videocodec")
         (P_copyver "LIBS/videocodec/videocore.codec" "LIBS:videocodec" "videocore.codec")
-        (if (OR #bundled-videocodec (NOT (exists "C:VCInfo" (noreq))))
-            (P_copyforce "C/VCInfo" "C:")
+        (if (NOT (exists "SYS:Tools/Commodities" (noreq))) (makedir "SYS:Tools/Commodities"))
+        (if (OR #bundled-videocodec (NOT (exists "SYS:Tools/Commodities/VCGrab" (noreq))))
+            (P_copyforce "Tools/Commodities/VCGrab" "SYS:Tools/Commodities")
+        )
+        (if (NOT (exists "SYS:Tools/Commodities/VCGrab.info" (noreq)))
+            (P_copyforce "Tools/Commodities/VCGrab.info" "SYS:Tools/Commodities")
         )
     )
+)
+(if (AND #install-link (OR #bundled-vchiq (OR #bundled-videocodec (NOT (exists "C:VCInfo" (noreq))))))
+    (P_copyforce "C/VCInfo" "C:")
 )
 
 ; VideoCore sound: the AHI driver and its mode file, always replaced by the
@@ -1036,19 +1067,20 @@
 ; Done
 ; ---------------------------------------------------------------------------
 ; One headline, then at most one two-line note per topic that was installed,
-; then the ReadMe pointer.  The worst case (USB + Ethernet + gic400 or video) is
+; then the ReadMe pointer.  The worst case (USB + network + VideoCore or gic400) is
 ; ten rendered lines - the whole budget.  Any note added here must displace
-; another one: the video note displaces the gic400 one (video installs gic400).
+; another one.
 ;
-; That holds because at most ONE usb note and ONE net note can fire.  The usb
-; notes are an if/else chain; the two net notes are not exclusive: since
-; 2.1 the SANA-II driver can be installed together with the bundled stack, so
-; the SANA-II note is explicitly suppressed when the stack note already
-; covers the machine.  Do not drop that condition.
+; That holds because at most ONE usb note, ONE net note and ONE of the VideoCore
+; and gic400 notes can fire.  The usb notes and the last group are if/else chains
+; (the VideoCore parts install gic400 too, so theirs displace its note); the two
+; net notes are not exclusive: since 2.1 the SANA-II driver can be installed
+; together with the bundled stack, so the SANA-II note is explicitly suppressed
+; when the stack note already covers the machine.  Do not drop that condition.
 (set #done-msg "Installation complete - reboot to activate.\n\n")
-; A Poseidon 4.x still set to its old xhci.device (5.x) comes first: it has a step to do -
-; a must when the 6.x driver replaced that file (#usb-context here means the guard
-; was answered Yes), else only to get the update.
+; A Poseidon 4.x still set to its old xhci.device (5.x) comes first: it has a step
+; to do - a must when the 6.x driver replaced that file (#usb-context here means
+; the guard was answered Yes), else only to get the update.
 (if (AND #usb-legacy (AND #xhci-old-5x #psd-classic))
     (if #usb-context
         (set #done-msg
@@ -1105,26 +1137,34 @@
         )
     )
 )
-(if #install-ahi
-    (set #done-msg
-        (cat #done-msg
-            "* sound: after a reboot, pick a VideoCore mode\n"
-            "  in the AHI preferences\n"
-        )
-    )
-)
 (if #install-vchiq
-    (set #done-msg
-        (cat #done-msg
-            "* video: dtoverlay=cma in the Pi's config.txt,\n"
-            "  gpu_mem=192 for large pictures - see ReadMe\n"
-        )
-    )
-    (if #install-gic400
+    (if #install-ahi
         (set #done-msg
             (cat #done-msg
-                "* LIBS:gic400.library goes unused if Emu68\n"
-                "  supplies its own copy - harmless\n"
+                "* video, sound: dtoverlay=cma in config.txt, a\n"
+                "  VideoCore mode in AHI prefs - see ReadMe\n"
+            )
+        )
+        (set #done-msg
+            (cat #done-msg
+                "* video: dtoverlay=cma in the Pi's config.txt,\n"
+                "  gpu_mem=128 for two videos - see ReadMe\n"
+            )
+        )
+    )
+    (if #install-ahi
+        (set #done-msg
+            (cat #done-msg
+                "* sound: dtoverlay=cma in config.txt, then pick\n"
+                "  a VideoCore mode in the AHI prefs - see ReadMe\n"
+            )
+        )
+        (if #install-gic400
+            (set #done-msg
+                (cat #done-msg
+                    "* LIBS:gic400.library goes unused if Emu68\n"
+                    "  supplies its own copy - harmless\n"
+                )
             )
         )
     )
