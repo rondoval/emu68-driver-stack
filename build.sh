@@ -10,7 +10,7 @@
 # The build/package half delegates to scripts/docker-build.sh (the CI-coupled wrapper
 # that owns the docker invocation and image tag); this script adds the backend knobs
 # and the upload.  The upload pushes the freshly built binaries into the same LIBS:/
-# DEVS:/C: locations the Installer uses; it does NOT run the Installer's extra steps
+# DEVS:/C:/SYS:Tools locations the Installer uses; it does NOT run the Installer's extra steps
 # (docs, icons, S:User-Startup).  For a first-time/full install use the .lha
 # (--package) + Installer.
 #
@@ -23,7 +23,7 @@
 #   ./build.sh [--build] [--package] [--upload] [--dry-run]
 #     --build     build the stack in the toolchain container (debug backend below)
 #     --package   build, then create build/package/emu68-drivers-<ver>[-<variant>]-<stamp>.lha
-#     --upload    push the built binaries (install/LIBS, DEVS, C) to the Amiga
+#     --upload    push the built binaries (install/LIBS, DEVS, C, Tools) to the Amiga
 #     (none of --build/--package/--upload => --build --upload)
 #     --dry-run   upload: show what would be copied; copy nothing
 #     -h, --help  this help
@@ -123,6 +123,7 @@ TREES=(
     "LIBS|LIBS:"
     "DEVS|DEVS:"
     "C|C:"
+    "Tools|SYS:Tools/"
     "ENVARC|ENVARC:"
 )
 
@@ -249,7 +250,7 @@ if (( DO_UPLOAD )); then
         fi
     fi
 
-    echo ">> deploying install/{LIBS,DEVS,C,ENVARC} to LIBS: / DEVS: / C: / ENVARC: ..."
+    echo ">> deploying install/{LIBS,DEVS,C,Tools,ENVARC} to LIBS: / DEVS: / C: / SYS:Tools / ENVARC: ..."
     for t in "${TREES[@]}"; do
         deploy_tree "${t%%|*}" "${t#*|}"
     done

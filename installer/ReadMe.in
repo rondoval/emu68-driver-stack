@@ -14,7 +14,7 @@ emu68 Driver Stack @PACKAGE_VERSION@
 THIS ARCHIVE
 ------------
 
-  @DEBUG_BACKEND@
+  Debug output: @DEBUG_BACKEND@
   @DEBUG_BACKEND_DESCRIPTION@
 
   @CACHE_OPS_DESCRIPTION@
@@ -24,21 +24,25 @@ WHAT TO INSTALL
 ---------------
 
 The one thing that decides everything: does your Emu68 have the dcache
-extensions? They are not part of official Emu68 - they are a separate change to
-its JIT that has not been merged upstream, so having them means running a
-custom Emu68 build:
+extensions? Official Emu68 releases up to 1.1.0-beta.1 do not have them - they
+came to its JIT later, so having them means running a newer Emu68 or a custom
+build:
 
   https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
 
 Without them the drivers still work, but the cache housekeeping around every
 transfer has to be done the slow way - and the bundled TCP/IP stack, which is
 built around that housekeeping being cheap, ends up SLOWER than the plain old
-SANA-II driver. So on official Emu68 there is no point installing the netdev
+SANA-II driver. So on those releases there is no point installing the netdev
 Ethernet driver at all: take the standard archive and pair the SANA-II driver
-with Roadshow, AmiTCP or Miami. On a custom build with the extensions, take the
-'-rangeops' archive and the netdev driver with the bundled lwip-amiga stack,
-which gets you close to gigabit line rate. USB is a separate, independent
-question: it depends only on which Poseidon you run.
+with Roadshow, AmiTCP or Miami. With the extensions, take the '-rangeops'
+archive and the netdev driver with the bundled lwip-amiga stack, which gets you
+close to gigabit line rate. USB is a separate, independent question: it depends
+only on which USB stack you run.
+
+The VideoCore parts (video, JPEG pictures, sound) need an Emu68 newer than
+1.1.0-beta.1, which has the extensions too, so for those take the '-rangeops'
+archive.
 
 The installer asks two separate questions - which genet.device, and which
 TCP/IP stack. They are independent now: since its 1.5 release the bundled
@@ -47,16 +51,18 @@ netdev one, so the SANA-II genet works with either stack.
 
 Find your row:
 
-  Emu68            Poseidon  Archive             Ethernet drv  TCP/IP     USB
-  ---------------  --------  ------------------  ------------  ---------  ---
-  official 1.1a1+  4.x       <ver>.lha           SANA-II 3.x   any        5.x
-  official 1.1a1+  6.x       <ver>.lha           SANA-II 3.x   any        6.x
-  custom+dcache    4.x       <ver>-rangeops.lha  netdev 4.x    bundled    5.x
-  custom+dcache    6.x       <ver>-rangeops.lha  netdev 4.x    bundled    6.x
-  
-  official 1.1a1+  Emu68 1.1 alpha.1 or newer, official build
-  custom+dcache    a custom Emu68 build carrying the dcache extensions
-  4.x / 6.x        classic Poseidon 4.x / Poseidon for AmigaOS 6.x
+  Emu68            USB stack     Archive             Ethernet drv  TCP/IP     USB
+  ---------------  ------------  ------------------  ------------  ---------  ---
+  without dcache   Poseidon 4.x  <ver>.lha           SANA-II 3.x   any        5.x
+  without dcache   Neptune 6.x   <ver>.lha           SANA-II 3.x   any        6.x
+  with dcache      Poseidon 4.x  <ver>-rangeops.lha  netdev 4.x    bundled    5.x
+  with dcache      Neptune 6.x   <ver>-rangeops.lha  netdev 4.x    bundled    6.x
+
+  without dcache   official Emu68 releases, 1.1 alpha.1 to 1.1.0-beta.1
+  with dcache      an Emu68 newer than 1.1.0-beta.1, or a custom build
+  Poseidon 4.x     classic Poseidon (Chris Hodges)
+  Neptune 6.x      Neptune, an incompatible fork of the Poseidon USB stack
+                   (6.0-6.2 were published as "Poseidon for AmigaOS")
   <ver>.lha        emu68-drivers-@PACKAGE_VERSION@.lha
   any              your existing Roadshow/AmiTCP/Miami, or the bundled stack
 
@@ -71,8 +77,11 @@ non-Ethernet SANA-II: PPP and SLIP dial-up, Token Ring, ArcNet. Note also that
 the stack carries ONE interface at a time besides loopback, so it is the Pi's
 port or your card, not both.
 
-xhci.device 5.x also runs on Poseidon for AmigaOS 6.x, just without real USB
-3.0 or fast UAS storage - so it is the safe answer if you are unsure.
+xhci.device (6.x) speaks only Neptune's own context interface, so it does not
+work with Poseidon. xhci-legacy.device (5.x) speaks the classic interface and
+runs on both, on Neptune just without real USB 3.0 or fast UAS storage - so it
+is the safe answer if you are unsure. The two have different names and can
+both be installed.
 
 The two '-serial' archives are the same drivers with serial-port diagnostics -
 take one only when chasing a problem. Installing a '-rangeops' archive on an
@@ -82,7 +91,7 @@ stops without changing anything.
 Where the advice comes from - measured TCP throughput over gigabit Ethernet,
 using genet.device with the bundled lwip-amiga stack:
 
-  official Emu68,             standard archive   104 Mbit/s in,  79 out
+  Emu68 without extensions,   standard archive   104 Mbit/s in,  79 out
   Emu68 with the extensions,  standard archive   698 Mbit/s in, 477 out
   Emu68 with the extensions,  -rangeops archive  near line rate
 
@@ -105,24 +114,25 @@ bcmpcie.library @BCMPCIE_VERSION@ (LIBS:)
   Talks to the Pi's PCIe bus: brings the link up, finds the devices on it and
   makes them available to the drivers.
 
-xhci.device (DEVS:USBHardware/)
+xhci.device, xhci-legacy.device (DEVS:USBHardware/)
   USB 2.0/3.0 for the Raspberry Pi 4 / CM4. Every USB controller it finds is a
   separate UNIT, and each unit has to be added to your USB stack on its own -
   which units exist depends on your board. See the driver's own README in
   Documentation/emu68-xhci-driver-context/ (or .../-legacy/ for the 5.x
   version) for the unit numbering.
-  The driver comes in two versions and you pick ONE at install time (see WHAT
-  TO INSTALL above). Poseidon itself is NOT part of this archive.
+  The driver comes in two versions; the installer asks which (see WHAT TO
+  INSTALL above), and you can have both. The USB stack itself is NOT part of
+  this archive.
 
-    6.x @XHCI_VERSION@  for Poseidon for AmigaOS 6.2 or newer. Shows USB 3.0 devices as
+    xhci.device @XHCI_VERSION@  for Neptune 6.2 or newer. Shows USB 3.0 devices as
       what they are instead of disguising them as USB 2.0, and supports the
       fast transfer mode UAS mass storage uses.
 
-    5.x @XHCI_LEGACY_VERSION@  required on classic Poseidon 4.x, and it also
-      runs on Poseidon for AmigaOS 6.x - but there SuperSpeed devices appear
-      as USB 2.0 and the fast storage mode is not available. It rides in the
-      archive under Storage/ and is installed to DEVS:USBHardware/ only if you
-      choose it.
+    xhci-legacy.device @XHCI_LEGACY_VERSION@  required on classic Poseidon
+      4.x, and it also runs on Neptune - but there SuperSpeed devices appear
+      as USB 2.0 and the fast storage mode is not available. Up to 5.5 this
+      driver was called xhci.device; to use the new one, select
+      xhci-legacy.device in Trident (see AFTER INSTALLATION).
 
 genet.device (DEVS:Networks/)
   Gigabit Ethernet for the port built into the Raspberry Pi 4 / CM4. It comes
@@ -183,7 +193,7 @@ AddNetInterface, RemoveNetInterface, NetShutdown, arp (C:)
   AddNetInterface adds interfaces from DEVS:NetInterfaces/ files (blocking
   until the DHCP lease arrives); RemoveNetInterface takes one down again
   (FORCE overrides the in-use refusal); NetShutdown stops the whole stack
-  and unloads the library once every network program has quit; Arp displays,
+  and unloads the library once every network program has quit; arp displays,
   sets and deletes ARP table entries (published/proxy entries are not
   supported).
 
@@ -222,14 +232,65 @@ nvmeinfo, nvmeadm (C:)
   lists the drives and their namespaces; nvmeadm reports SMART/health data,
   log pages, self-test results and firmware information.
 
-openpci.library @OPENPCI_VERSION@ (LIBS:) [optional]
-  A compatibility shim for older software that opens "openpci.library" by
-  name; it forwards those calls to bcmpcie.library. Do NOT install it if you
-  have a real PCI expansion board (Mediator, Prometheus, G-REX, ...).
+vchiq.device, videocodec.library @VCHIQ_VERSION@ (DEVS:, LIBS:) [experimental]
+  Hardware video and pictures through the Pi's VideoCore chip: it decodes
+  H.264 and MJPEG video and JPEG, PNG, GIF, BMP, TGA and PPM pictures,
+  encodes H.264 and JPEG, and scales and converts pictures, while the 68k
+  stays almost idle. Programs open videocodec.library, which drives the VideoCore through
+  its codec driver LIBS:videocodec/videocore.codec; that one reaches the
+  firmware through vchiq.device. It needs settings in the Pi's config.txt
+  (see AFTER INSTALLATION), and the installer leaves it unticked. What works
+  and what does not yet: Documentation/emu68-vchiq-library/README.md.
 
-lspci (C:) [optional]
+VCGrab (SYS:Tools/Commodities)
+  Installed with videocodec.library. A commodity that records an RTG screen
+  to an MKV file on hot keys and grabs stills, the VideoCore doing the work.
+  Double-click its icon for the settings window; a copy in WBStartup starts
+  it at boot. From the shell, with its full name, it records one file or
+  grabs one still. No sound or mouse pointer:
+  Documentation/emu68-vchiq-library/README.md.
+
+VCInfo (C:)
+  Installed with videocodec.library. VCInfo checks the setup and says what
+  to fix ('VCInfo'), and lists what the hardware can do ('VCInfo CODECS').
+
+videocore.audio @VCHIQ_VERSION@ (DEVS:AHI, DEVS:AudioModes) [experimental]
+  An AHI driver: every AHI program plays through the VideoCore to HDMI0,
+  HDMI1 or the Pi's headphone jack, at 8000 to 48000 Hz: three modes
+  (16-bit, HiFi, and 7.1 for an AV receiver on HDMI with AHI 6), the
+  output chosen per unit in the AHI preferences. It needs AHI and
+  vchiq.device, which the installer brings along with VCInfo, and only the
+  cma overlay, not gpu_mem. Its latency is about 40 ms; it does not record.
+
+vcjpeg.datatype @VCHIQ_VERSION@ (SYS:Classes/DataTypes) [experimental]
+  JPEG pictures through the VideoCore, for every program that loads
+  pictures through datatypes (MultiView, Workbench, browsers). It takes
+  baseline JPEGs of about 2 megapixels and more (twice as fast as software
+  from 5 megapixels); smaller, progressive and CMYK ones stay with your
+  JPEG datatype, as does any picture the VideoCore cannot decode. Its
+  descriptor (SYS:Storage/DataTypes/VCJPEG) is added from S:User-Startup,
+  after the system's: remove that line to go back. It brings videocodec
+  along.
+
+openpci.library @OPENPCI_VERSION@ (LIBS:)
+  The openpci API for programs that list PCI devices through it, such as
+  identify.library; it forwards those calls to bcmpcie.library. Only one
+  openpci.library can be installed: if another one is there - most likely a
+  real PCI expansion board's (Mediator, Prometheus, G-REX, ...) - the
+  installer leaves it unticked and asks before replacing it, since that
+  board's software would stop working.
+
+lspci (C:)
   Lists the devices found on the PCIe bus. Run it from a Shell to check the
-  link is up and everything was detected.
+  link is up and everything was detected. Installed with bcmpcie.library; if
+  another lspci is in C: - most likely a PCI board's - the installer asks
+  before replacing it.
+
+Developer/ (in the archive, never installed)
+  For programmers: the headers of the libraries and devices here (include),
+  gic400.library's autodoc and FD file (Autodocs, FD), a minimal video player
+  and picture viewer with their sources (Examples/videocodec), and the test
+  tools VCTest and VPUPlay (Tools).
 
 
 INSTALLATION
@@ -238,17 +299,43 @@ INSTALLATION
 Run the included 'Install' script using the Commodore Installer tool
 (v43.3 or later, included with AmigaOS 3.1.4+).
 
-Pick the components you want from the checklist, then answer three questions:
-ONE USB version (xhci 6.x, xhci 5.x, or none), ONE Ethernet driver (netdev
-genet, SANA-II genet, or none) and - unless you picked netdev, which answers
-it for you - which TCP/IP stack (the bundled lwip-amiga, or leave
-bsdsocket.library alone). The installer pulls in the libraries they need
-automatically, so you cannot end up with a driver whose library is missing,
-and it never downgrades a newer copy already on your system - if an equal or
-newer version is installed, it asks first. Three things are always replaced,
-because switching versions keeps the same filename and a version check would
-refuse: the chosen xhci.device, the chosen genet.device and, when you choose
-the bundled stack, bsdsocket.library.
+The first screen names the archive you are installing from. The installer
+then asks which USB drivers you want (xhci.device, xhci-legacy.device, both
+or none - ticked as the machine has them), ONE Ethernet driver (netdev genet,
+SANA-II genet, or none) and - unless you picked netdev, which answers it for
+you - which TCP/IP stack (the bundled lwip-amiga, or leave bsdsocket.library
+alone). The Ethernet and TCP/IP answers start at what you have installed; on
+a machine with no genet.device the standard archive suggests the SANA-II
+driver and the -rangeops archive netdev, as the table above recommends. On a
+Poseidon 4.x machine whose xhci.device is still the 5.x driver, installing the
+6.x xhci.device replaces it; the installer asks first.
+
+Then pick the other components from a checklist (videocodec, the VideoCore
+video support, videocore.audio, its sound, and vcjpeg.datatype, its
+pictures, are experimental and unticked). Tools come with what they serve:
+nvmeinfo and nvmeadm with nvme.device, lspci with bcmpcie.library. The
+installer pulls in the libraries the drivers need automatically, so you
+cannot end up with a driver whose library is missing; in Expert mode the
+checklist also offers gic400.library and bcmpcie.library on their own. The
+VideoCore parts start ticked once they are installed, so an upgrade replaces
+them. The last screen before anything is copied lists what will be installed;
+Abort there leaves your system as it was.
+
+In Novice mode the installer asks only before replacing something it should
+not replace unasked: it keeps what the machine has, takes the default answers
+above, and shows the result on that same last screen.
+
+When the bundled stack is to replace another one, the installer asks first.
+Answer 'Keep my stack' and your bsdsocket.library and commands stay; if you
+had picked netdev, which only the bundled stack can open, you get the SANA-II
+driver instead. Updating the bundled stack does not ask.
+
+A copy already on your system is left alone when it is the same file, and
+replaced when it is the same version from another archive (switching between
+the standard, -rangeops and -serial archives replaces every driver). Only a
+newer copy than the one in the archive makes the installer ask before going
+back. The chosen genet.device is always replaced, since both drivers share
+the name, and so is bsdsocket.library when you choose the bundled stack.
 
 If you are upgrading from 2.0 the installer shows one extra screen, telling
 you that the interface settings in your ENVARC:netstack.prefs are no longer
@@ -257,8 +344,10 @@ read. It changes nothing - see AFTER INSTALLATION for what to move where.
 On the -rangeops archives the Install script first checks that your Emu68 has
 the dcache extensions and refuses to continue if it does not. If you are
 preparing a disk on a machine that is not the target, it warns and lets you
-carry on. The small tool it uses for the check runs from the unpacked archive
-and is never copied to C:.
+carry on. On the standard archive the same check tells you when your Emu68
+has the extensions, so the -rangeops archive would suit it better. The small
+tool it uses for its checks runs from the unpacked archive and is never copied
+to C:.
 
 Manual installation: copy files to the destinations listed above and reboot.
 
@@ -270,15 +359,23 @@ Reboot, then finish the steps the drivers cannot do for themselves. The
 installer's closing screen lists the ones that apply to your selection; the
 full set is:
 
-  xhci 6.x   Install Poseidon for AmigaOS 6.x (distributed separately), then
-             add EACH xhci.device unit as a USB host controller in Trident,
+  xhci.device
+             Install Neptune 6.x (distributed separately), then add EACH
+             xhci.device unit as a USB host controller in Neptune USB,
              or from a Shell with:
-               AddUSBHardware xhci.device <unit>
-             The driver's README in Documentation/ lists the units.
+               USBAddHardware xhci.device <unit>
+             (AddUSBHardware before Neptune 6.3). The driver's README in
+             Documentation/ lists the units.
 
-  xhci 5.x   Install a Poseidon USB stack, then add EACH xhci.device unit as a
-             USB host controller in Trident. On Poseidon for AmigaOS 6.x the
-             6.x version is the faster one - re-run the installer to switch.
+  xhci-legacy.device
+             Install a USB stack, then add EACH xhci-legacy.device unit as
+             a USB host controller in Trident (or Neptune USB). Poseidon set
+             up with the old xhci.device (5.5 or older) keeps working on it;
+             to use this version, change the device in Trident's Hardware
+             page to xhci-legacy.device, save, and then delete
+             DEVS:USBHardware/xhci.device - unless the installer already put
+             the 6.x driver there for Neptune. On Neptune xhci.device is the
+             faster one.
 
   bundled    S:Network-Startup adds the network interface at boot with
   stack      AddNetInterface (DHCP; per-interface settings live in
@@ -310,6 +407,28 @@ full set is:
   nvme       nvmeinfo lists the NVMe drives and namespaces that were found;
              nvmeadm reports SMART/health data and log pages.
 
+  videocodec Add dtoverlay=cma (the memory vchiq.device shares with the
+             VideoCore) to config.txt on the Pi's boot partition, and
+             gpu_mem=128 (memory for the VideoCore's codecs) for pictures
+             over 24 megapixels, two videos at once and a video during a
+             recording: the default of 76 plays one 1080p video or records
+             a 1080p screen. Add dtoverlay=videocore,mem=32 for
+             full-screen video at 24 or 32 bits. Emu68 reads config.txt
+             only when the Pi starts, so then press Ctrl-Amiga-Amiga or
+             power-cycle. 'VCInfo' then checks the setup, says what to fix,
+             and ends with PASS.
+
+  videocore.audio
+             Reboot (or run 'AddAudioModes REFRESH'), then pick a
+             "VideoCore" mode and its output (HDMI0, HDMI1, Headphone
+             jack) for a unit in the AHI preferences. If an HDMI display
+             stays silent, the Pi drives it as DVI: add hdmi_drive=2 to
+             config.txt and press Ctrl-Amiga-Amiga.
+
+  vcjpeg.datatype
+             Reboot: the line in S:User-Startup adds the descriptor. It
+             needs the videocodec settings above.
+
   gic400     Nothing to do. If your Emu68 supplies gic400.library from its own
              ROM, that copy is already in memory at boot and the drivers use
              it, so the LIBS: copy simply goes unused.
@@ -320,14 +439,22 @@ REQUIREMENTS
 
   - Raspberry Pi 4 or CM4 running @CACHE_OPS_FIRMWARE_REQ@
   - AmigaOS 3.x
-  - USB stack (for xhci.device): Poseidon, distributed separately. The 6.x
-    driver needs Poseidon for AmigaOS 6.2 or newer; the 5.x driver runs on classic
-    Poseidon 4.x and on 6.x alike
+  - USB stack (for the xhci drivers), distributed separately. The 6.x driver
+    needs Neptune 6.2 or newer (6.2 was published as "Poseidon for AmigaOS");
+    the 5.x driver runs on classic Poseidon 4.x and on Neptune alike
   - Networking (for genet.device): the netdev version requires the bundled
     lwip-amiga stack; the SANA-II version works with either that or a
     third-party stack such as Roadshow, AmiTCP or Miami. The bundled stack
     needs no genet at all if you connect through an Ethernet-type SANA-II
     card or USB adapter
+  - Video (videocodec.library): Emu68 newer than 1.1.0-beta.1 with the cma
+    overlay, gpu_mem=128 for pictures over 24 megapixels, two videos at
+    once and a video during a recording, and Picasso96 with an RTG screen for
+    the players
+  - Sound (videocore.audio): AHI 4 or 6, Emu68 newer than 1.1.0-beta.1 with
+    the cma overlay
+  - Pictures (vcjpeg.datatype): AmigaOS 3.2 (picture.datatype 47), and what
+    videocodec.library needs
 
 
 SOURCE CODE
@@ -340,7 +467,9 @@ LICENSE
 -------
 
 Each component is covered by its own license: GPL-2.0, MPL-2.0/GPL-2.0+, and
-BSD-3-Clause for lwip-amiga (bsdsocket.library and the networking tools).
+BSD-3-Clause for lwip-amiga (bsdsocket.library and the networking tools) and
+emu68-vchiq-library (vchiq.device, videocodec.library, videocore.audio,
+vcjpeg.datatype and the video tools).
 A summary is in the 'Licenses' file at the top of this archive; the full text
 for every component is in the 'Documentation' drawer, one sub-drawer per
 component (with its README and release notes). Per-file SPDX headers in the

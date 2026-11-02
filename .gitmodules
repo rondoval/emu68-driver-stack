@@ -1,9 +1,3 @@
-[submodule "components/devicetree.resource"]
-	path = components/devicetree.resource
-	url = https://github.com/rondoval/devicetree.resource.git
-[submodule "components/mailbox.resource"]
-	path = components/mailbox.resource
-	url = https://github.com/rondoval/mailbox.resource.git
 [submodule "components/emu68-common"]
 	path = components/emu68-common
 	url = https://github.com/rondoval/emu68-common.git
@@ -35,3 +29,6 @@
 	path = components/emu68-xhci-driver-legacy
 	url = https://github.com/rondoval/emu68-xhci-driver.git
 	branch = main
+[submodule "components/emu68-vchiq-library"]
+	path = components/emu68-vchiq-library
+	url = https://github.com/rondoval/emu68-vchiq-library.git

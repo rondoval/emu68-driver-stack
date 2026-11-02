@@ -56,3 +56,8 @@ docker run --rm \
 	"${IMAGE}" \
 	sh -c 'BD=${EMU68_BUILD_DIR:-build}; ID=/work/${EMU68_INSTALL_DIR:-install}; cmake -S . -B "$BD" -DCMAKE_INSTALL_PREFIX="$ID" ${EMU68_CONFIGURE_ARGS:-} && cmake --build "$BD" "$@"' \
 	sh "$@"
+
+# For the editor's IntelliSense: the components' compile commands in one file, with host paths.
+if command -v python3 >/dev/null 2>&1; then
+	python3 -I "${SCRIPT_DIR}/merge-compile-commands.py" "${STACK_ROOT}" "${EMU68_BUILD_DIR:-build}" || true
+fi
