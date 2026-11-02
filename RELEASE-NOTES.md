@@ -131,6 +131,9 @@ adds a second video, a video during a recording and pictures over 24 megapixels.
 - The archive's `Developer/` drawer gains `gic400.library`'s autodoc and FD file,
   contributed by flype (flype44), the `videocodec.library` and `vchiq.device` headers,
   and example sources.
+- Its headers gain `libraries/pci_irq.h`: one call each to attach and detach a PCIe
+  device's interrupt through `bcmpcie.library`, as the USB and NVMe drivers do. The
+  interrupt types it takes come from `libraries/bcmpcie.h`, also new.
 - `emu68-common` 2.1 to 2.3: see its notes.
 
 ---

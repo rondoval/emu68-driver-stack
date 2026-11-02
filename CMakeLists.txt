@@ -622,9 +622,9 @@ add_custom_target(package
     #     third party can write a netdev driver or stack against it (BSD-3-Clause,
     #     exec/types.h only); devices/vchiq.h, VideoCore firmware services as Exec
     #     I/O (BSD-3-Clause, exec/ headers only);
-    #   the gic400, bcmpcie and openpci library headers, minus pci_constants.h,
-    #     pci_ids.h and the drivers' vector helpers pci_irq.h; videocodec.h and
-    #     videocodec_backend.h;
+    #   the gic400, bcmpcie and openpci library headers, minus pci_constants.h
+    #     and pci_ids.h; pci_irq.h, the interrupt attach/detach helpers xhci and
+    #     nvme use; videocodec.h and videocodec_backend.h;
     #   net/if_arp_ioctl.h, below.
     # None of them includes anything but NDK headers, which keeps emu68-common out
     # entirely (nothing pulls in types.h).
@@ -651,9 +651,11 @@ add_custom_target(package
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PACKAGE_STAGE}/Developer/include/libraries"
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_INSTALL_PREFIX}/include/libraries/gic400.h"
+        "${CMAKE_INSTALL_PREFIX}/include/libraries/bcmpcie.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/bcmpcie_errors.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/openpci.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/pcitags.h"
+        "${CMAKE_INSTALL_PREFIX}/include/libraries/pci_irq.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/videocodec.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/videocodec_backend.h"
         "${PACKAGE_STAGE}/Developer/include/libraries/"
