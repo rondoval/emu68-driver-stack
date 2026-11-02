@@ -33,7 +33,7 @@ installer asks far less on an update.
 | `genet.device` (3.x, SANA-II) | **3.17** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v3.17/RELEASE-NOTES.md) |
 | `nvme.device` | **1.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.7/RELEASE-NOTES.md) |
 | lwip-amiga (TCP/IP stack) | **1.8** — ships `bsdsocket.library` **4.108** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.8/RELEASE-NOTES.md) |
-| VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype` | **0.3** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-library/blob/v0.3/RELEASE-NOTES.md) |
+| VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype` | **0.4** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-library/blob/v0.4/RELEASE-NOTES.md) |
 
 ---
 
