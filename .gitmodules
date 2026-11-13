@@ -32,3 +32,6 @@
 [submodule "components/emu68-vchiq-library"]
 	path = components/emu68-vchiq-library
 	url = https://github.com/rondoval/emu68-vchiq-library.git
+[submodule "components/emu68-rpivid-codec"]
+	path = components/emu68-rpivid-codec
+	url = https://github.com/rondoval/emu68-rpivid-codec.git
