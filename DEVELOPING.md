@@ -11,15 +11,14 @@ has its own README and release notes; this guide covers the stack as a whole.
 | `emu68-pcie-library` | `bcmpcie.library`, `openpci.library`, `lspci` |
 | `emu68-xhci-driver-context` | `xhci.device` 6.x, for Neptune |
 | `emu68-xhci-driver-legacy` | `xhci-legacy.device` 5.x, for classic Poseidon 4.x; also runs on Neptune |
-| `emu68-genet-driver-netdev` | `genet.device` 4.x, for the bundled stack |
-| `emu68-genet-driver-sana2` | `genet.device` 3.x, for any SANA-II stack, and `genet-stats` |
+| `emu68-genet-driver-netdev` | `genet.device`, for any stack (netdev and SANA-II), and `genet-stats` |
 | `emu68-nvme-driver` | `nvme.device`, `nvmeinfo`, `nvmeadm` |
-| `lwip-amiga` | `bsdsocket.library`, the network tools, and the `netdev` interface `genet.device` 4.x implements |
+| `lwip-amiga` | `bsdsocket.library`, the network tools, and the `netdev` interface `genet.device` implements |
 | `emu68-vchiq-library` | The experimental VideoCore parts: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype`, `VCInfo`, `VCGrab` |
+| `emu68-rpivid-codec` | `rpivid.codec`, `videocodec.library`'s H.265 backend on the Pi 4's HEVC block; the Installer copies it with videocodec on every machine |
 
 The two xhci components are branches of one repo, `emu68-xhci-driver`
-(`context_release` and `main`), and the two genet ones of `emu68-genet-driver`
-(`netdev_release` and `main`).
+(`context_release` and `main`).
 
 ## Building
 
@@ -141,22 +140,20 @@ section, unless a module is declared never to go there.
 
 | Path | Contents |
 |---|---|
-| `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library`, `bsdsocket.library`, `videocodec.library`, `videocodec/videocore.codec` |
+| `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library`, `bsdsocket.library`, `videocodec.library`, `videocodec/videocore.codec`, `videocodec/rpivid.codec` |
 | `install/DEVS/` | `nvme.device`, `vchiq.device`, `AHI/videocore.audio`, `AudioModes/VIDEOCORE` |
 | `install/DEVS/USBHardware/` | `xhci.device` (6.x), `xhci-legacy.device` (5.x) |
-| `install/DEVS/Networks/` | `genet.device` (4.x, netdev) |
-| `install/C/` | `lspci`, `nvmeadm`, `nvmeinfo`, `netdev-stats`, `VCInfo`, `emu68check`, and the network tools: `netinfo`, `mdns`, `GetNetStatus`, `ShowNetStatus`, `AddNetInterface`, `RemoveNetInterface`, `NetShutdown`, `arp`, `ping`, `traceroute`, `NetLogViewer` and `NetSpeed`, these two with icons |
+| `install/DEVS/Networks/` | `genet.device` |
+| `install/C/` | `lspci`, `nvmeadm`, `nvmeinfo`, `netdev-stats`, `genet-stats`, `VCInfo`, `emu68check`, and the network tools: `netinfo`, `mdns`, `GetNetStatus`, `ShowNetStatus`, `AddNetInterface`, `RemoveNetInterface`, `NetShutdown`, `arp`, `ping`, `traceroute`, `NetLogViewer` and `NetSpeed`, these two with icons |
 | `install/Classes/DataTypes/` | `vcjpeg.datatype` |
 | `install/Tools/Commodities/` | `VCGrab` and its icon |
-| `install/Storage/` | What the Installer places on request: `DEVS/Networks/genet.device` and `C/genet-stats` (the SANA-II 3.x line), `NetInterfaces/genet` (the interface sample), `DataTypes/VCJPEG` (`vcjpeg.datatype`'s descriptor) |
+| `install/Storage/` | What the Installer places on request: `NetInterfaces/genet` (the interface sample), `DataTypes/VCJPEG` (`vcjpeg.datatype`'s descriptor) |
 | `install/ENVARC/` | `netstack.prefs.default`, which the Installer copies to `ENVARC:` when there are no prefs yet |
 | `install/Developer/` | In the archive only: `Tools/` (`VCTest`, `VPUPlay`), `Examples/videocodec/`, `Autodocs/`, `FD/`. The `package` target adds `include/`, the public headers |
 | `install/include/`, `install/lib/` | Build-time headers and static libraries, including the `netdev` header and its CMake package |
 
-The two `genet.device` lines share a filename, so only one can be installed: the 4.x
-one sits at its real path and the 3.x one under `Storage/`, and the Installer asks
-which. The xhci lines have their own names and can sit side by side. `emu68check` is
-run from the archive and never copied to `C:`.
+The xhci lines have their own names and can sit side by side. `emu68check` is run
+from the archive and never copied to `C:`.
 
 ## The dcache extensions
 
@@ -184,8 +181,8 @@ An Emu68 with the extensions advertises them as the `/emu68` device-tree propert
 `dcache-range-ops`. Drivers built with the inline path check it
 (`emu68_has_dcache_range_ops()` in `emu68_features.h`) and refuse to load on firmware
 without it, rather than take a Line-F trap. The option reaches only the components that
-use `cache_ops.h`: `emu68-xhci-driver-context`, both genet lines, `emu68-nvme-driver`
-and `emu68-vchiq-library`.
+use `cache_ops.h`: `emu68-xhci-driver-context`, `emu68-genet-driver-netdev`, `emu68-nvme-driver`,
+`emu68-vchiq-library` and `emu68-rpivid-codec`.
 
 ## Packaging
 
@@ -209,7 +206,24 @@ on every configure, so edit the templates.
 ## Testing
 
 Testing happens on real hardware: there is no automated suite at this level.
-`emu68-vchiq-library` has an on-device suite, described in its developer guide.
+Three components have a pytest suite of their own, each started with its
+`tests/run.sh`:
+
+- `emu68-genet-driver-netdev`: a host tier (the driver's own sources under vamos,
+  code gates) and hardware tiers; its `tests/README.md`.
+- `emu68-vchiq-library`: an on-device suite, described in its developer guide.
+- `emu68-rpivid-codec`: an on-device suite (its developer guide and
+  `docs/test-plan.md`), and host checks that need no machine (`tests/host/run.sh`:
+  the parser against FFmpeg's traces of the HEVC conformance set, the command
+  lists, the damaged streams).
+
+The suites share one test harness, in `emu68-common/testing/` (its `README.md`):
+the Amiga through amimcp, the install with the machine's own files kept, the
+debug log, the test programs' output grammar, baselines and the report. The
+stack build installs it to `install/share/emu68-testing/` (and the vchiq
+library's VideoCore part to `install/share/vchiq-testing/`), where the suites
+find it, so build the stack before running one. A component that gets its first
+suite starts from that README.
 `sockbench` (lwip-amiga's throughput bench) and `diskbench` (the mass-storage bench in
 `emu68-xhci-driver-context`) are built but not installed, so they stay out of the
 archive.

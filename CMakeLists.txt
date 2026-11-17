@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(emu68_driver_stack VERSION 2.3.0 LANGUAGES NONE)
+project(emu68_driver_stack VERSION 2.4.0 LANGUAGES NONE)
 
 include(ExternalProject)
 
@@ -72,10 +72,10 @@ set(EMU68_DEBUG_COMPONENTS
     emu68-xhci-driver-context
     emu68-xhci-driver-legacy
     emu68-genet-driver-netdev
-    emu68-genet-driver-sana2
     emu68-nvme-driver
     lwip-amiga
-    emu68-vchiq-library)
+    emu68-vchiq-library
+    emu68-rpivid-codec)
 
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
@@ -98,9 +98,9 @@ option(EMU68_VCHIQ_TEST_HOOKS
 set(EMU68_CACHE_OPS_COMPONENTS
     emu68-xhci-driver-context
     emu68-genet-driver-netdev
-    emu68-genet-driver-sana2
     emu68-nvme-driver
-    emu68-vchiq-library)
+    emu68-vchiq-library
+    emu68-rpivid-codec)
 
 # The tier-override lists, in ascending rung order.  A component may appear in at
 # most one; each entry must name a debug-emitting component (or the list is ALL).
@@ -175,11 +175,11 @@ set(EMU68_GIC400_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68
 set(EMU68_PCIE_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-pcie-library"  CACHE PATH "Path to emu68-pcie-library sources")
 set(EMU68_XHCI_CONTEXT_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver-context" CACHE PATH "Path to emu68-xhci-driver-context (6.x, context HCD ABI) sources")
 set(EMU68_XHCI_LEGACY_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-xhci-driver-legacy"  CACHE PATH "Path to emu68-xhci-driver-legacy (5.x, classic V1/V2 HCD interface) sources")
-set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-netdev"  CACHE PATH "Path to emu68-genet-driver-netdev (4.x, netdev ABI) sources")
-set(EMU68_GENET_SANA2_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-sana2"   CACHE PATH "Path to emu68-genet-driver-sana2 (3.x, SANA-II) sources")
+set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-netdev"  CACHE PATH "Path to emu68-genet-driver-netdev (genet.device: netdev and SANA-II) sources")
 set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
 set(LWIP_AMIGA_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/lwip-amiga"          CACHE PATH "Path to lwip-amiga sources")
 set(EMU68_VCHIQ_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-vchiq-library" CACHE PATH "Path to emu68-vchiq-library sources")
+set(EMU68_RPIVID_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-rpivid-codec"  CACHE PATH "Path to emu68-rpivid-codec sources")
 
 # Validate required paths
 foreach(required_path
@@ -190,10 +190,10 @@ foreach(required_path
     EMU68_XHCI_CONTEXT_SOURCE_DIR
     EMU68_XHCI_LEGACY_SOURCE_DIR
     EMU68_GENET_NETDEV_SOURCE_DIR
-    EMU68_GENET_SANA2_SOURCE_DIR
     EMU68_NVME_SOURCE_DIR
     LWIP_AMIGA_SOURCE_DIR
-    EMU68_VCHIQ_SOURCE_DIR)
+    EMU68_VCHIQ_SOURCE_DIR
+    EMU68_RPIVID_SOURCE_DIR)
     if(NOT EXISTS "${${required_path}}")
         message(FATAL_ERROR
             "Required path does not exist: ${required_path}='${${required_path}}'\n"
@@ -211,20 +211,13 @@ endif()
 # Function to add stack projects
 function(add_stack_project target source_dir)
     set(options)
-    set(oneValueArgs INSTALL_PREFIX)
+    set(oneValueArgs)
     set(multiValueArgs DEPENDS)
     cmake_parse_arguments(STACK "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-    # A component installs into the shared install prefix unless INSTALL_PREFIX
-    # overrides it with a subtree (e.g. .../Storage).  CMAKE_PREFIX_PATH stays
-    # the shared prefix, so the component still *finds* the exported
-    # Emu68Common / GIC400 packages there.  This lets the SANA-II genet variant
-    # land its DEVS/Networks/genet.device under Storage without colliding with
-    # the netdev variant's genet.device of the same filename.
+    # Every component installs into the shared install prefix, where the
+    # others find its exported packages.
     set(_install_prefix "${CMAKE_INSTALL_PREFIX}")
-    if(STACK_INSTALL_PREFIX)
-        set(_install_prefix "${STACK_INSTALL_PREFIX}")
-    endif()
 
     # Debug args only apply to debug-emitting components (those that consume
     # emu68-common's debug.h): the stack-wide sink, plus this component's own
@@ -305,17 +298,20 @@ add_stack_project(emu68-xhci-driver-context "${EMU68_XHCI_CONTEXT_SOURCE_DIR}" D
 add_stack_project(emu68-xhci-driver-legacy "${EMU68_XHCI_LEGACY_SOURCE_DIR}"
     DEPENDS emu68-pcie-library)
 add_stack_project(lwip-amiga "${LWIP_AMIGA_SOURCE_DIR}" DEPENDS emu68-common)
+# genet.device: one driver with both interfaces, netdev (for lwip-amiga, whose
+# Netdev package it consumes) and SANA-II; genet-stats with it.
 add_stack_project(emu68-genet-driver-netdev "${EMU68_GENET_NETDEV_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library lwip-amiga)
-# SANA-II (3.x) genet variant: installs to a Storage/ subtree so its genet.device
-# does not collide with the netdev variant's, and does not depend on lwip-amiga.
-add_stack_project(emu68-genet-driver-sana2 "${EMU68_GENET_SANA2_SOURCE_DIR}"
-    INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/Storage"
-    DEPENDS emu68-common emu68-gic400-library)
 add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
 # VideoCore VPU: vchiq.device (the VCHIQ transport), videocodec.library (the codec API),
 # videocore.codec (its MMAL backend: codecs, ISP), the VCInfo check and the VCGrab recorder; the test rig
 # (VCTest, VPUPlay) and the examples (VCPlay, VCShow) go to Developer/ only.
 add_stack_project(emu68-vchiq-library "${EMU68_VCHIQ_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
+
+# The Pi 4's HEVC block: rpivid.codec, an H.265 backend of videocodec.library, with
+# its probe and replay tools in Developer/Tools.  GPL-2.0 (Linux's command generator).
+# The Install script copies it with videocodec on every machine; on a Pi 3, which has
+# no HEVC block, an H.265 session fails to open.
+add_stack_project(emu68-rpivid-codec "${EMU68_RPIVID_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library emu68-vchiq-library)
 
 get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
 add_custom_target(stack ALL DEPENDS ${_stack_targets})
@@ -349,10 +345,10 @@ emu68_read_version(OPENPCI_VERSION "${EMU68_PCIE_SOURCE_DIR}/openpci.library/CMa
 emu68_read_version(XHCI_VERSION    "${EMU68_XHCI_CONTEXT_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(XHCI_LEGACY_VERSION "${EMU68_XHCI_LEGACY_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(GENET_VERSION   "${EMU68_GENET_NETDEV_SOURCE_DIR}/CMakeLists.txt")
-emu68_read_version(GENET_SANA2_VERSION "${EMU68_GENET_SANA2_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(LWIP_VERSION    "${LWIP_AMIGA_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(VCHIQ_VERSION   "${EMU68_VCHIQ_SOURCE_DIR}/CMakeLists.txt")
+emu68_read_version(RPIVID_VERSION  "${EMU68_RPIVID_SOURCE_DIR}/CMakeLists.txt")
 
 # lwip-amiga's release version is LWIP_VERSION; the shipped bsdsocket.library keeps ABI
 # major 4 (the AmiTCP/Roadshow contract) with its revision derived from that release
@@ -365,7 +361,9 @@ set(BSDSOCKET_VERSION "4.${_bsdsocket_rev}")
 
 # Components whose README + LICENSE + release notes are bundled into the archive
 # under Documentation/<name>/, and listed in the generated root 'Licenses' file.
-# Fields: drawer-name | source dir | license summary | version variable.
+# Fields: drawer-name | source dir | license summary | version variable, and
+# optionally | <tag>=<path>: the licence of third-party code the component's
+# binaries contain, <path> relative to the source dir, shipped as LICENSE-<tag>.
 set(EMU68_DOC_COMPONENTS
     "emu68-common|${EMU68_COMMON_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|COMMON_VERSION"
     "emu68-gic400-library|${EMU68_GIC400_SOURCE_DIR}|MPL-2.0 OR GPL-2.0+|GIC400_VERSION"
@@ -373,10 +371,10 @@ set(EMU68_DOC_COMPONENTS
     "emu68-xhci-driver-context|${EMU68_XHCI_CONTEXT_SOURCE_DIR}|GPL-2.0|XHCI_VERSION"
     "emu68-xhci-driver-legacy|${EMU68_XHCI_LEGACY_SOURCE_DIR}|GPL-2.0|XHCI_LEGACY_VERSION"
     "emu68-genet-driver-netdev|${EMU68_GENET_NETDEV_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
-    "emu68-genet-driver-sana2|${EMU68_GENET_SANA2_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_SANA2_VERSION"
-    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0|NVME_VERSION"
+    "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0, nvme.device contains the BSD-2-Clause mounter|NVME_VERSION|mounter=nvme.device/mounter/LICENSE"
     "lwip-amiga|${LWIP_AMIGA_SOURCE_DIR}|BSD-3-Clause|LWIP_VERSION"
-    "emu68-vchiq-library|${EMU68_VCHIQ_SOURCE_DIR}|BSD-3-Clause|VCHIQ_VERSION")
+    "emu68-vchiq-library|${EMU68_VCHIQ_SOURCE_DIR}|BSD-3-Clause|VCHIQ_VERSION"
+    "emu68-rpivid-codec|${EMU68_RPIVID_SOURCE_DIR}|GPL-2.0, with GPL-2.0-or-later code from Linux's HEVC driver|RPIVID_VERSION")
 
 # Describe the debug backend for the generated ReadMe so each archive is
 # self-describing about which build variant it is.
@@ -407,7 +405,7 @@ if(EMU68_FORCE_LVO_CACHE_OPS)
 else()
     set(RANGEOPS_BUILD 1)
     set(CACHE_OPS_DESCRIPTION
-        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions: one newer than 1.1.0-beta.1, or a custom\n  build.  On any other firmware xhci.device (6.x), both\n  genet.device builds (netdev 4.x and SANA-II 3.x) and\n  nvme.device notice this at boot and refuse to load rather than\n  crash (the -serial build logs why); use the standard archive\n  there.")
+        "RANGEOPS build - the faster build, but it REQUIRES an Emu68 with\n  the dcache extensions: one newer than 1.1.0-beta.1, or a custom\n  build.  On any other firmware xhci.device (6.x),\n  genet.device and nvme.device notice this at boot and refuse to\n  load rather than crash (the -serial build logs why); use the\n  standard archive there.")
     set(CACHE_OPS_FIRMWARE_REQ "an Emu68 with the dcache extensions\n    (newer than 1.1.0-beta.1, or a custom build)\n    https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops")
 endif()
 
@@ -484,8 +482,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
   bcmpcie.library        ${BCMPCIE_VERSION}
   xhci.device            ${XHCI_VERSION}
   xhci-legacy.device     ${XHCI_LEGACY_VERSION}
-  genet.device (netdev)  ${GENET_VERSION}
-  genet.device (SANA-II) ${GENET_SANA2_VERSION}
+  genet.device           ${GENET_VERSION}
   nvme.device            ${NVME_VERSION}
   openpci.library        ${OPENPCI_VERSION}
   bsdsocket.library      ${BSDSOCKET_VERSION}
@@ -493,6 +490,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
   videocodec.library     ${VCHIQ_VERSION}
   videocore.audio        ${VCHIQ_VERSION}
   vcjpeg.datatype        ${VCHIQ_VERSION}
+  rpivid.codec           ${RPIVID_VERSION}
 
 Archive variants:
 
@@ -503,20 +501,20 @@ Archive variants:
 
 Which one to take:
 
-  Emu68            USB stack     Archive             Ethernet drv  TCP/IP     USB
-  ---------------  ------------  ------------------  ------------  ---------  ---
-  without dcache   Poseidon 4.x  <ver>.lha           SANA-II 3.x   any        5.x
-  without dcache   Neptune 6.x   <ver>.lha           SANA-II 3.x   any        6.x
-  with dcache      Poseidon 4.x  <ver>-rangeops.lha  netdev 4.x    bundled    5.x
-  with dcache      Neptune 6.x   <ver>-rangeops.lha  netdev 4.x    bundled    6.x
+  Emu68            USB stack     Archive             USB driver
+  ---------------  ------------  ------------------  ----------------------
+  without dcache   Poseidon 4.x  <ver>.lha           xhci-legacy.device 5.x
+  without dcache   Neptune 6.x   <ver>.lha           xhci.device 6.x
+  with dcache      Poseidon 4.x  <ver>-rangeops.lha  xhci-legacy.device 5.x
+  with dcache      Neptune 6.x   <ver>-rangeops.lha  xhci.device 6.x
 
 'without dcache' = official Emu68 releases, 1.1 alpha.1 to 1.1.0-beta.1.
 'with dcache' = an Emu68 newer than 1.1.0-beta.1, or a custom build.
-'any' = your existing Roadshow/AmiTCP/Miami, or the bundled bsdsocket.library:
-since lwip-amiga 1.5 the bundled stack drives Ethernet-type SANA-II drivers as
-well as the netdev one, so the driver and the stack are separate choices and
-the installer asks them separately. The stack carries one interface at a time
-besides loopback.
+
+Every archive works with any TCP/IP stack: genet.device serves the bundled
+bsdsocket.library through its netdev interface, and Roadshow, AmiTCP or Miami
+through SANA-II. The bundled stack carries one interface at a time besides
+loopback.
 
 The standard archives run on any Emu68 from 1.1 alpha.1 on.  The -rangeops
 archives hold the same drivers built to use the dcache extensions and are
@@ -526,13 +524,12 @@ extensions, so they need a newer Emu68 or a custom build:
   https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops
 
 On any other firmware the -rangeops xhci/genet/nvme drivers refuse to load
-rather than crash, so use the standard archives there.  Without the extensions
-the bundled TCP/IP stack is slower than the SANA-II driver with Roadshow,
-AmiTCP or Miami - which is why the standard rows above pick SANA-II.
+rather than crash, so use the standard archives there.
 
-The VideoCore parts (video, JPEG pictures, sound; experimental) need an Emu68
-newer than 1.1.0-beta.1, which has the extensions too, so for those take the
--rangeops archives.
+The VideoCore parts (video, JPEG pictures, sound) and rpivid.codec (H.265 on
+the HEVC block of a Pi 4 or CM4), all experimental, need an Emu68 newer than
+1.1.0-beta.1, which has the extensions too, so for those take the -rangeops
+archives.
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component
@@ -546,14 +543,22 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     list(GET _parts 0 _name)
     list(GET _parts 2 _lic)
     list(GET _parts 3 _vervar)
-    string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n\n")
+    string(APPEND _licenses "  ${_name} ${${_vervar}}\n      ${_lic}\n      -> Documentation/${_name}/LICENSE\n")
+    list(LENGTH _parts _count)
+    if(_count GREATER 4)
+        list(GET _parts 4 _extra)
+        string(REGEX REPLACE "=.*" "" _tag "${_extra}")
+        string(APPEND _licenses "      -> Documentation/${_name}/LICENSE-${_tag} (${_tag})\n")
+    endif()
+    string(APPEND _licenses "\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  Developer/Autodocs/gic400.doc, Developer/FD/gic400_lib.fd -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device          -> emu68-xhci-driver-context\n  xhci-legacy.device   -> emu68-xhci-driver-legacy\n  genet.device (DEVS/Networks)         -> emu68-genet-driver-netdev\n  genet.device (Storage/DEVS/Networks) -> emu68-genet-driver-sana2\n  genet-stats (Storage/C)              -> emu68-genet-driver-sana2\n  nvme.device       -> emu68-nvme-driver\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  vchiq.device      -> emu68-vchiq-library\n  videocodec.library, videocodec/videocore.codec -> emu68-vchiq-library\n  AHI/videocore.audio, AudioModes/VIDEOCORE -> emu68-vchiq-library\n  Classes/DataTypes/vcjpeg.datatype, Storage/DataTypes/VCJPEG -> emu68-vchiq-library\n  VCInfo            -> emu68-vchiq-library\n  Tools/Commodities/VCGrab -> emu68-vchiq-library\n  Developer/Tools/VCTest, Developer/Tools/VPUPlay, Developer/Examples/videocodec -> emu68-vchiq-library\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  Developer/Autodocs/gic400.doc, Developer/FD/gic400_lib.fd -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device          -> emu68-xhci-driver-context\n  xhci-legacy.device   -> emu68-xhci-driver-legacy\n  genet.device      -> emu68-genet-driver-netdev\n  genet-stats       -> emu68-genet-driver-netdev\n  nvme.device       -> emu68-nvme-driver (and its mounter, BSD-2-Clause)\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  vchiq.device      -> emu68-vchiq-library\n  videocodec.library, videocodec/videocore.codec -> emu68-vchiq-library\n  AHI/videocore.audio, AudioModes/VIDEOCORE -> emu68-vchiq-library\n  Classes/DataTypes/vcjpeg.datatype, Storage/DataTypes/VCJPEG -> emu68-vchiq-library\n  VCInfo            -> emu68-vchiq-library\n  Tools/Commodities/VCGrab -> emu68-vchiq-library\n  Developer/Tools/VCTest, Developer/Tools/VPUPlay, Developer/Examples/videocodec -> emu68-vchiq-library\n  videocodec/rpivid.codec -> emu68-rpivid-codec\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
-# contributes its LICENSE, README(s) and release notes to Documentation/<name>/.
+# contributes its LICENSE, README(s), release notes and NOTICE, if any, to
+# Documentation/<name>/.
 # Developer-only README-internal.md is excluded; the file globs are resolved at
 # configure time, so re-run CMake after adding a component doc file.
 set(_doc_cmds)
@@ -566,7 +571,17 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     if(EXISTS "${_dir}/LICENSE")
         list(APPEND _doc_cmds COMMAND ${CMAKE_COMMAND} -E copy "${_dir}/LICENSE" "${_dest}/LICENSE")
     endif()
-    file(GLOB _docs "${_dir}/README.md" "${_dir}/README-*.md" "${_dir}/RELEASE-NOTES*.md")
+    list(LENGTH _parts _count)
+    if(_count GREATER 4)
+        list(GET _parts 4 _extra)
+        string(REGEX REPLACE "=.*" "" _tag "${_extra}")
+        string(REGEX REPLACE "^[^=]*=" "" _path "${_extra}")
+        if(NOT EXISTS "${_dir}/${_path}")
+            message(FATAL_ERROR "${_name}: ${_tag}'s licence ${_dir}/${_path} is missing")
+        endif()
+        list(APPEND _doc_cmds COMMAND ${CMAKE_COMMAND} -E copy "${_dir}/${_path}" "${_dest}/LICENSE-${_tag}")
+    endif()
+    file(GLOB _docs "${_dir}/README.md" "${_dir}/README-*.md" "${_dir}/RELEASE-NOTES*.md" "${_dir}/NOTICE")
     foreach(_f IN LISTS _docs)
         get_filename_component(_fn "${_f}" NAME)
         if(_fn STREQUAL "README-internal.md")
@@ -592,8 +607,6 @@ add_custom_target(package
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/ENVARC" "${PACKAGE_STAGE}/ENVARC"
     # Storage/ holds what the Install script places only on request:
-    #   DEVS/Networks/genet.device, C/genet-stats - the SANA-II genet line, copied
-    #     to DEVS:Networks/ and C: when the user picks it over netdev;
     #   NetInterfaces/genet - the commented interface sample, copied to
     #     SYS:Storage/NetInterfaces/ with the bundled stack, and to
     #     DEVS:NetInterfaces/ when a genet.device is installed and none is there;

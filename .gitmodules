@@ -17,10 +17,6 @@
 	path = components/emu68-genet-driver-netdev
 	url = https://github.com/rondoval/emu68-genet-driver.git
 	branch = netdev_release
-[submodule "components/emu68-genet-driver-sana2"]
-	path = components/emu68-genet-driver-sana2
-	url = https://github.com/rondoval/emu68-genet-driver.git
-	branch = main
 [submodule "components/emu68-xhci-driver-context"]
 	path = components/emu68-xhci-driver-context
 	url = https://github.com/rondoval/emu68-xhci-driver.git

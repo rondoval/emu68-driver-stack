@@ -113,10 +113,9 @@
 
 ; P_copyforce - unconditional force-copy of a file into a destination drawer, with
 ; no version check.  Used for the CLI tools (kept in lockstep with the binary they
-; talk to) and for the two files that can legitimately be DOWNGRADED: the chosen
-; genet.device variant (switching netdev 4.x -> SANA-II 3.x is a same-name version
-; downgrade P_copyver would ask about) and the lwip-amiga bsdsocket.library (which
-; must replace whatever incompatible bsdsocket a third-party stack installed).
+; talk to) and for the one file that can legitimately be DOWNGRADED: the
+; lwip-amiga bsdsocket.library (which must replace whatever incompatible
+; bsdsocket a third-party stack installed).
 (procedure P_copyforce #ct_src #ct_destdir
     (copyfiles
         (prompt (cat "Installing " (fileonly #ct_src) "..."))
@@ -313,60 +312,31 @@
 (set #install-xhci (OR #usb-context #usb-legacy))
 
 ; ---------------------------------------------------------------------------
-; Ethernet driver (genet.device) - one mutually-exclusive choice: both variants
-; carry the same file name, so only one of them can be installed.
-;
-;   netdev  4.x  zero-copy, and ONLY the bundled lwip-amiga stack can open it
-;                - so this answer settles the TCP/IP question below.
-;   SANA-II 3.x  the classic driver, usable by any TCP/IP stack - including the
-;                bundled one, which drives Ethernet-type SANA-II devices since
-;                lwip-amiga 1.5.
-;
-; The default follows the installed genet.device: 4.x is the netdev line, any
-; older version a SANA-II driver.  With none installed the archive decides: netdev
-; pays off only with the inline range ops, so the standard archive defaults to
-; SANA-II (the ReadMe's WHAT TO INSTALL table).
+; Ethernet driver (genet.device).  One driver serves any TCP/IP stack: the
+; bundled lwip-amiga through its zero-copy netdev interface, Roadshow, AmiTCP
+; and Miami through SANA-II.  So it is a yes/no, independent of the stack.
 ; ---------------------------------------------------------------------------
-(set #genet-old (getversion "DEVS:Networks/genet.device"))
-(set #genet-default 1)                       ; SANA-II
-(if (OR (>= #genet-old 262144)               ; 4.0
-        (AND (= #genet-old 0) #rangeops-build))
-    (set #genet-default 0)                   ; netdev
-)
 (if (= @user-level 0)
-    (set #genet-choice #genet-default)       ; NOVICE: the default above
-    (set #genet-choice
-        (askchoice
-            (prompt "Ethernet driver (genet.device):")
+    (set #install-genet 1)                   ; NOVICE: install it
+    (set #install-genet
+        (askbool
+            (prompt "Install the Ethernet driver (genet.device @GENET_VERSION@)?")
             (help
-                "The Pi's onboard Gigabit port.  Both variants\n"
-                "are called genet.device, so pick ONE.\n\n"
-                "  netdev - fast zero-copy driver.  Only the\n"
-                "    bundled lwip-amiga stack can open it, so\n"
-                "    choosing it installs that stack too.\n\n"
-                "  SANA-II - classic driver, works with any\n"
-                "    TCP/IP stack: Roadshow, AmiTCP, Miami -\n"
-                "    and the bundled one, slower than netdev.\n\n"
-                @askchoice-help
+                "The Pi's onboard Gigabit port.  One driver\n"
+                "for any TCP/IP stack: the bundled lwip-amiga\n"
+                "uses its fast netdev interface, Roadshow,\n"
+                "AmiTCP and Miami its SANA-II one.\n\n"
+                @askbool-help
             )
-            (choices
-                "netdev @GENET_VERSION@  (needs the bundled stack)"
-                "SANA-II @GENET_SANA2_VERSION@  (any TCP/IP stack)"
-                "None - no Ethernet driver"
-            )
-            (default #genet-default)
+            (choices "Install" "Skip")
+            (default 1)
         )
     )
 )
-(set #net-netdev    (= #genet-choice 0))
-(set #net-sana2     (= #genet-choice 1))
-(set #install-genet (OR #net-netdev #net-sana2))
 
 ; ---------------------------------------------------------------------------
-; TCP/IP stack - asked only when netdev was NOT chosen.  netdev genet.device
-; can only be driven by the bundled lwip-amiga stack, so "netdev + keep my own
-; stack" is a combination the user cannot reach; that is why no guard follows.
-; The consent gate below still asks before another stack is replaced.
+; TCP/IP stack - a choice of its own, since genet.device works with any.  The
+; consent gate below asks before another stack is replaced.
 ;
 ; C/emu68check BSDSOCKET tells whose LIBS:bsdsocket.library is installed: RC 0
 ; the bundled stack's, 5 another stack's, 10 none.  The default keeps what is
@@ -380,31 +350,29 @@
 (if (OR #stack-ours (= #bsd-rc 10))
     (set #stack-default 0)                   ; the bundled stack
 )
-(if #net-netdev
-    (set #stack-choice 0)                    ; netdev implies the bundled stack
-    (if (= @user-level 0)
-        (set #stack-choice #stack-default)   ; NOVICE: the default above
-        (set #stack-choice
-            (askchoice
-                (prompt "TCP/IP stack:")
-                (help
-                    "Only one bsdsocket.library can be active.\n\n"
-                    "  lwip-amiga - the bundled stack.  Besides the\n"
-                    "    netdev genet it drives Ethernet SANA-II\n"
-                    "    drivers too (not PPP or SLIP), one\n"
-                    "    interface at a time.  It REPLACES your\n"
-                    "    bsdsocket.library and the Roadshow\n"
-                    "    commands in C:\n\n"
-                    "  Leave alone - installs no stack, and\n"
-                    "    touches nothing in LIBS: or C:.\n\n"
-                    @askchoice-help
-                )
-                (choices
-                    "lwip-amiga  (the bundled stack)"
-                    "Leave bsdsocket.library alone"
-                )
-                (default #stack-default)
+(if (= @user-level 0)
+    (set #stack-choice #stack-default)       ; NOVICE: the default above
+    (set #stack-choice
+        (askchoice
+            (prompt "TCP/IP stack:")
+            (help
+                "Only one bsdsocket.library can be active.\n\n"
+                "  lwip-amiga - the bundled stack.  It drives\n"
+                "    genet.device through its fast netdev\n"
+                "    interface, and Ethernet SANA-II drivers\n"
+                "    too (not PPP or SLIP), one interface at a\n"
+                "    time.  It REPLACES your bsdsocket.library\n"
+                "    and the Roadshow commands in C:\n\n"
+                "  Leave alone - installs no stack, and\n"
+                "    touches nothing in LIBS: or C:.\n"
+                "    genet.device works with your stack.\n\n"
+                @askchoice-help
             )
+            (choices
+                "lwip-amiga  (the bundled stack)"
+                "Leave bsdsocket.library alone"
+            )
+            (default #stack-default)
         )
     )
 )
@@ -413,20 +381,8 @@
 ; Installing the bundled stack over another one replaces that stack's
 ; bsdsocket.library and its commands in C:.  Make the user accept that
 ; explicitly, since we must not silently overwrite a TCP/IP library; an update
-; of the bundled stack itself skips the question.  Keeping the current stack
-; drops the bundled one, and with it the netdev genet.device, which nothing else
-; can open: the SANA-II driver takes its place.  This gate runs before anything
-; is installed, and it doubles as the netdev line's disclosure: netdev implies
-; this stack.
-(set #gate-ask "Replace them?")
-(if #net-netdev
-    (set #gate-ask
-        (cat
-            "Replace them?  Keeping your stack installs\n"
-            "the SANA-II genet.device instead of netdev."
-        )
-    )
-)
+; of the bundled stack itself skips the question.  This gate runs before
+; anything is installed.
 (if (AND #install-stack (NOT #stack-ours))
     (if (NOT
             (askbool
@@ -438,7 +394,7 @@
                         "traceroute, arp and AddNetInterface over the\n"
                         "Roadshow commands of those names in C:.\n\n"
                         "THIS CANNOT BE UNDONE from the installer.\n\n"
-                        #gate-ask
+                        "Replace them?"
                     )
                 )
                 (help
@@ -447,25 +403,15 @@
                     "commands are Roadshow's own names.  Going back\n"
                     "means reinstalling Roadshow, AmiTCP or Miami.\n\n"
                     "Keep my stack leaves bsdsocket.library and\n"
-                    "those commands untouched.  With the netdev\n"
-                    "driver chosen it installs the SANA-II\n"
-                    "genet.device instead: netdev works only with\n"
-                    "the bundled stack, SANA-II with any.\n\n"
+                    "those commands untouched; genet.device works\n"
+                    "with it.\n\n"
                     @askbool-help
                 )
                 (choices "Replace" "Keep my stack")
                 (default 1)
             )
         )
-        (
-            (set #install-stack 0)
-            (if #net-netdev
-                (
-                    (set #net-netdev 0)
-                    (set #net-sana2 1)
-                )
-            )
-        )
+        (set #install-stack 0)
     )
 )
 
@@ -525,6 +471,9 @@
 ; videocodec) brings videocodec along; off.
 ; Each of the three starts ticked once installed, so that an upgrade replaces it;
 ; videocodec goes by its library, as the sound alone brings vchiq.device too.
+; videocodec brings rpivid.codec, its H.265 backend, on every machine.  A Pi 3
+; has no HEVC block: there an H.265 video fails to open (error -9), and nothing
+; else changes.
 (set #openpci-rc (run "C/emu68check OPENPCI" (safe)))
 (set #openpci-other (AND (<> #openpci-rc 0) (<> #openpci-rc 10)))
 (set #features-default 8)
@@ -571,7 +520,9 @@
                 "experimental and needs the cma overlay in the\n"
                 "Pi's config.txt, and gpu_mem=128 there for\n"
                 "pictures over 24 megapixels and two videos at\n"
-                "once.\n\n"
+                "once.  It also brings rpivid.codec, which\n"
+                "decodes H.265 video on the HEVC block of a\n"
+                "Pi 4 or CM4.\n\n"
                 "videocore.audio is an AHI driver that plays\n"
                 "through the VideoCore to HDMI or the headphone\n"
                 "jack; it needs AHI, and brings vchiq.device and\n"
@@ -698,8 +649,7 @@
 )
 
 ; ---------------------------------------------------------------------------
-; Disk-space check (safety net - the binaries are small).  genet and its tools
-; come from a different subtree per variant, so size the chosen one.
+; Disk-space check (safety net - the binaries are small).
 ; ---------------------------------------------------------------------------
 (set #need-libs 0)
 (set #need-devs 0)
@@ -709,11 +659,11 @@
 (if #install-openpci (set #need-libs (+ #need-libs (getsize "LIBS/openpci.library"))))
 (if #usb-context     (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci.device"))))
 (if #usb-legacy      (set #need-devs (+ #need-devs (getsize "DEVS/USBHardware/xhci-legacy.device"))))
-(if #net-netdev      (set #need-devs (+ #need-devs (getsize "DEVS/Networks/genet.device"))))
-(if #net-sana2
+(if #install-genet
     (
-        (set #need-devs (+ #need-devs (getsize "Storage/DEVS/Networks/genet.device")))
-        (set #need-c    (+ #need-c (getsize "Storage/C/genet-stats")))
+        (set #need-devs (+ #need-devs (getsize "DEVS/Networks/genet.device")))
+        (set #need-c    (+ #need-c (getsize "C/genet-stats")))
+        (set #need-c    (+ #need-c (getsize "C/netdev-stats")))
     )
 )
 (if #install-nvme
@@ -736,6 +686,7 @@
     (
         (set #need-libs (+ #need-libs (getsize "LIBS/videocodec.library")))
         (set #need-libs (+ #need-libs (getsize "LIBS/videocodec/videocore.codec")))
+        (set #need-libs (+ #need-libs (getsize "LIBS/videocodec/rpivid.codec")))
         (set #need-libs (+ #need-libs (getsize "Tools/Commodities/VCGrab")))
         (set #need-libs (+ #need-libs (getsize "Tools/Commodities/VCGrab.info")))
     )
@@ -752,7 +703,6 @@
         (set #need-libs (+ #need-libs (getsize "Storage/DataTypes/VCJPEG")))
     )
 )
-(if #net-netdev (set #need-c (+ #need-c (getsize "C/netdev-stats"))))
 (if #install-stack
     (
         (set #need-libs (+ #need-libs (getsize "LIBS/bsdsocket.library")))
@@ -809,8 +759,7 @@
         (set #sum (cat #sum "* USB: " #sum-usb "\n"))
     )
 )
-(if #net-netdev (set #sum (cat #sum "* Ethernet: genet.device (netdev)\n")))
-(if #net-sana2  (set #sum (cat #sum "* Ethernet: genet.device (SANA-II)\n")))
+(if #install-genet (set #sum (cat #sum "* Ethernet: genet.device\n")))
 (if #install-stack
     (
         (set #sum-stack ", replacing your stack")
@@ -863,23 +812,23 @@
 (if #usb-context (P_copyver "DEVS/USBHardware/xhci.device" "DEVS:USBHardware" "xhci.device"))
 (if #usb-legacy  (P_copyver "DEVS/USBHardware/xhci-legacy.device" "DEVS:USBHardware" "xhci-legacy.device"))
 
-; genet.device - force-copy the chosen variant (a variant switch is a same-name
-; version change, so a version-checked copy would ask before the downgrade).
+; genet.device - a version-checked copy, as for the other drivers: 5.x replaces
+; the netdev 4.x and the SANA-II 3.x lines alike by version.
 (if #install-genet
     (
         (makedir "DEVS:Networks")
-        (if #net-netdev
-            (P_copyforce "DEVS/Networks/genet.device" "DEVS:Networks")
-            (P_copyforce "Storage/DEVS/Networks/genet.device" "DEVS:Networks")
-        )
+        (P_copyver "DEVS/Networks/genet.device" "DEVS:Networks" "genet.device")
     )
 )
 
-; Counter tools pair with the DRIVER, not with the stack: netdev-stats speaks the
-; netdev command set straight to the device, genet-stats the SANA-II one, so each
-; is useless against the other variant.
-(if #net-netdev (P_copyforce "C/netdev-stats" "C:"))
-(if #net-sana2  (P_copyforce "Storage/C/genet-stats" "C:"))
+; Counter tools pair with the DRIVER, not with the stack: netdev-stats asks its
+; netdev side, genet-stats its SANA-II side, and both answer beside either stack.
+(if #install-genet
+    (
+        (P_copyforce "C/netdev-stats" "C:")
+        (P_copyforce "C/genet-stats" "C:")
+    )
+)
 
 (if #install-nvme
     (
@@ -900,10 +849,11 @@
 )
 
 ; VideoCore: vchiq.device for any of the three parts; videocodec.library, its
-; backend in LIBS:videocodec/ and VCGrab for all but the sound alone; VCInfo, kept
-; in lockstep as nvme's tools are with the driver.  VCGrab is a commodity, so it
-; goes with the others; its icon only when there is none, so that edited tooltypes
-; stay.  The test rig (Developer/Tools: VCTest, VPUPlay) and the examples
+; backends in LIBS:videocodec/ (videocore.codec, and rpivid.codec, the H.265 one)
+; and VCGrab for all but the sound alone; VCInfo, kept in lockstep as nvme's tools
+; are with the driver.  VCGrab is a commodity, so it goes with the others; its icon
+; only when there is none, so that edited tooltypes stay.  The test tools
+; (Developer/Tools: VCTest, VPUPlay) and the examples
 ; (Developer/Examples/videocodec) stay in the archive.
 (set #bundled-vchiq 0)
 (set #bundled-videocodec 0)
@@ -913,6 +863,7 @@
         (set #bundled-videocodec (P_copyver "LIBS/videocodec.library" "LIBS:" "videocodec.library"))
         (makedir "LIBS:videocodec")
         (P_copyver "LIBS/videocodec/videocore.codec" "LIBS:videocodec" "videocore.codec")
+        (P_copyver "LIBS/videocodec/rpivid.codec" "LIBS:videocodec" "rpivid.codec")
         (if (NOT (exists "SYS:Tools/Commodities" (noreq))) (makedir "SYS:Tools/Commodities"))
         (if (OR #bundled-videocodec (NOT (exists "SYS:Tools/Commodities/VCGrab" (noreq))))
             (P_copyforce "Tools/Commodities/VCGrab" "SYS:Tools/Commodities")
@@ -1011,8 +962,8 @@
         )
         ; The live interface file names networks/genet.device, and TYPE defaults
         ; to AUTO - which has to open the device to probe it - so write it only
-        ; when a genet.device is actually installed.  One file serves both
-        ; variants: the probe tells netdev and SANA-II apart by itself.
+        ; when a genet.device is actually installed.  The probe picks its
+        ; netdev interface by itself.
         (if (AND #install-genet (NOT (exists "DEVS:NetInterfaces/genet" (noreq))))
             (copyfiles
                 (prompt "Installing DEVS:NetInterfaces/genet (DHCP)...")
@@ -1074,9 +1025,9 @@
 ; That holds because at most ONE usb note, ONE net note and ONE of the VideoCore
 ; and gic400 notes can fire.  The usb notes and the last group are if/else chains
 ; (the VideoCore parts install gic400 too, so theirs displace its note); the two
-; net notes are not exclusive: since 2.1 the SANA-II driver can be installed
-; together with the bundled stack, so the SANA-II note is explicitly suppressed
-; when the stack note already covers the machine.  Do not drop that condition.
+; net notes are not exclusive: genet.device installs with or without the
+; bundled stack, so the driver note is explicitly suppressed when the stack note
+; already covers the machine.  Do not drop that condition.
 (set #done-msg "Installation complete - reboot to activate.\n\n")
 ; A Poseidon 4.x still set to its old xhci.device (5.x) comes first: it has a step
 ; to do - a must when the 6.x driver replaced that file (#usb-context here means
@@ -1129,7 +1080,7 @@
         )
     )
 )
-(if (AND #net-sana2 (NOT #install-stack))
+(if (AND #install-genet (NOT #install-stack))
     (set #done-msg
         (cat #done-msg
             "* point a TCP/IP stack (Roadshow) at\n"

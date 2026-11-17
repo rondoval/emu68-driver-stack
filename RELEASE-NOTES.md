@@ -1,3 +1,50 @@
+# Release notes — Emu68 driver stack 2.4.0
+
+Changes since 2.3.0.
+
+## New: H.265 video (experimental)
+
+- **`rpivid.codec` decodes H.265 on the Pi's own HEVC block**, as a second codec
+  driver of `videocodec.library`: a program that plays video through the library
+  plays H.265 too. 8-bit H.265 up to 4096x2304, so 4K plays full screen at 30 fps,
+  and 10-bit up to 1080p, shown at 8 bits. A Pi 4 or CM4 has the block; the
+  installer copies `rpivid.codec` with videocodec, and on a Pi 3, which has none, it
+  offers no codec and an H.265 video fails to open (error -3).
+- **`videocodec.library` shows H.265 on screen**: it puts the VideoCore's converter
+  behind the H.265 decoder, so a program asks for the RGB format and size it wants,
+  as for H.264.
+
+## Networking
+
+- **One Ethernet driver for every TCP/IP stack.** `genet.device` 5.0 replaces
+  both the netdev 4.x driver and the SANA-II 3.x one: the bundled stack uses its
+  fast netdev interface, Roadshow, AmiTCP and Miami its SANA-II one, at the speed
+  each had before. The installer no longer asks which driver, only whether, and
+  `genet-stats` and `netdev-stats` install with it and work beside either stack.
+- **SANA-II stacks get what only the netdev driver had:** the link settings in
+  `ENV:genet.prefs`, interrupt tuning through `netdev-stats`, and they come up
+  without a cable plugged in.
+- **The bundled stack picks the fast interface by itself** (lwip-amiga 1.9,
+  `bsdsocket.library` 4.109).
+
+## VideoCore
+
+- **More pixel formats through the VideoCore converter**: NV21, planar 4:2:2, the
+  packed 4:2:2 orders UYVY, YVYU and VYUY, and 32-bit RGB without alpha, both ways,
+  and YV12 out.
+- **For programmers**: `VC_CodecOfTag()` maps a container's FourCC to its codec, and
+  `libraries/videocodec.h` names the codecs and pixel formats codec drivers to come
+  will take.
+
+| Component | Version | Detailed notes |
+|---|---|---|
+| `genet.device` | **5.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v5.0/RELEASE-NOTES.md) |
+| lwip-amiga (TCP/IP stack) | **1.9** — ships `bsdsocket.library` **4.109** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.9/RELEASE-NOTES.md) |
+| `rpivid.codec` (H.265) | **0.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-rpivid-codec/blob/main/RELEASE-NOTES.md) |
+| VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype` | **0.6** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-library/blob/main/RELEASE-NOTES.md) |
+
+---
+
 # Release notes — Emu68 driver stack 2.3.0
 
 Changes since 2.2.0. The Pi's VideoCore now works for the Amiga: hardware video,

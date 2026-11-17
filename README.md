@@ -20,9 +20,9 @@ as an experiment, hardware video, JPEG pictures and sound on the Pi's VideoCore.
   driver's own documentation lists which units your board has. Needs a USB
   stack — [Neptune](https://github.com/rondoval/neptune-usb-stack) or classic Poseidon 4.x -
   which is distributed separately.
-- **Ethernet** — `genet.device` drives the Pi 4's built-in gigabit port, in two
-  versions you choose between: the fast zero-copy `netdev` driver for the
-  bundled TCP/IP stack, or the classic SANA-II driver that any stack can use.
+- **Ethernet** — `genet.device` drives the Pi 4's built-in gigabit port for any
+  TCP/IP stack: the bundled one through its fast zero-copy `netdev` interface,
+  Roadshow, AmiTCP or Miami through SANA-II. `genet-stats` shows its statistics.
 - **TCP/IP** — lwip-amiga, a modern TCP/IP stack that configures itself over
   DHCP. It provides the standard AmigaOS networking API, so it installs under
   the usual name `bsdsocket.library`. It also drives classic Ethernet-type
@@ -34,8 +34,9 @@ as an experiment, hardware video, JPEG pictures and sound on the Pi's VideoCore.
 - **Storage** — `nvme.device` drives an NVMe SSD attached to the PCIe slot, with
   the `nvmeinfo` and `nvmeadm` tools for health and SMART data.
 - **VideoCore (experimental)** — `videocodec.library` decodes H.264 and MJPEG
-  video and pictures and encodes H.264 and JPEG while the 68k stays almost idle,
-  `vcjpeg.datatype` speeds up JPEG pictures in every program, `videocore.audio`
+  video and pictures and encodes H.264 and JPEG while the 68k stays almost idle;
+  with `rpivid.codec` it decodes H.265 too, 4K included, on the HEVC block of a
+  Pi 4 or CM4. `vcjpeg.datatype` speeds up JPEG pictures in every program, `videocore.audio`
   plays AHI sound to HDMI or the headphone jack, and `VCGrab` records an RTG screen
   to an MKV file. `VCInfo` checks the setup. The installer leaves these unticked.
 - **Supporting libraries** — `gic400.library` and `bcmpcie.library`, which the
@@ -50,8 +51,7 @@ as an experiment, hardware video, JPEG pictures and sound on the Pi's VideoCore.
 - For USB: a USB stack, Neptune or classic Poseidon 4.x (not included — see
   *What to download and install* below)
 - For networking: either the bundled lwip-amiga stack or a third-party one such
-  as Roadshow, AmiTCP or Miami. The `netdev` `genet.device` needs lwip-amiga;
-  the SANA-II `genet.device` works with either
+  as Roadshow, AmiTCP or Miami; `genet.device` works with either
 - For the VideoCore parts: an Emu68 newer than 1.1.0-beta.1 with the `cma` overlay;
   `vcjpeg.datatype` needs AmigaOS 3.2 and `videocore.audio` needs AHI. The archive's
   `ReadMe` has the settings
@@ -66,13 +66,12 @@ JIT later, so having them means running a newer Emu68 or
 [a custom Emu68 build](https://github.com/rondoval/Emu68/releases/tag/v1.1-alpha-with-rangeops).
 Without them the drivers still work, but the cache housekeeping around every
 transfer has to be done the slow way — and the bundled TCP/IP stack, which is
-built around that housekeeping being cheap, ends up *slower* than the plain old
-SANA-II driver. So on those releases there is no point installing the netdev
-Ethernet driver at all: take the standard archive and pair the SANA-II driver
-with Roadshow, AmiTCP or Miami. With the extensions, take the `-rangeops`
-archive and the netdev driver with the bundled lwip-amiga stack, which gets you
-close to gigabit line rate. USB is a separate, independent question: it depends
-only on which USB stack you run.
+built around that housekeeping being cheap, ends up *slower* than Roadshow,
+AmiTCP or Miami. So on those releases take the standard archive with one of those
+stacks. With the extensions, take the `-rangeops` archive and the bundled
+lwip-amiga stack, which gets you close to gigabit line rate. The Ethernet driver
+is the same either way: `genet.device` serves every stack. USB is a separate,
+independent question: it depends only on which USB stack you run.
 
 The VideoCore parts (video, JPEG pictures, sound) need an Emu68 newer than
 1.1.0-beta.1, which has the extensions too, so for those take the `-rangeops`
@@ -82,15 +81,15 @@ Archives are on the [Releases](https://github.com/rondoval/emu68-driver-stack/re
 page. **Find your row.**
 
 The installer asks for the Ethernet driver and the TCP/IP stack separately —
-they are independent choices, because the bundled stack drives SANA-II
-hardware too.
+they are independent choices: `genet.device` works with any stack, and the
+bundled stack drives SANA-II hardware too.
 
-| Your Emu68 | Your USB stack | Download | Ethernet driver | TCP/IP | USB |
-|---|---|---|---|---|---|
-| Official release, 1.1 alpha.1 to 1.1.0-beta.1 | classic Poseidon 4.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x | Roadshow / AmiTCP / Miami, or the bundled stack | `xhci-legacy.device` **5.x** |
-| Official release, 1.1 alpha.1 to 1.1.0-beta.1 | Neptune 6.x | `emu68-drivers-<ver>.lha` | **SANA-II** 3.x | Roadshow / AmiTCP / Miami, or the bundled stack | `xhci.device` **6.x** |
-| Newer, or a custom build with the dcache extensions | classic Poseidon 4.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x | bundled lwip-amiga | `xhci-legacy.device` **5.x** |
-| Newer, or a custom build with the dcache extensions | Neptune 6.x | `emu68-drivers-<ver>-rangeops.lha` | **netdev** 4.x | bundled lwip-amiga | `xhci.device` **6.x** |
+| Your Emu68 | Your USB stack | Download | TCP/IP | USB |
+|---|---|---|---|---|
+| Official release, 1.1 alpha.1 to 1.1.0-beta.1 | classic Poseidon 4.x | `emu68-drivers-<ver>.lha` | Roadshow / AmiTCP / Miami, or the bundled stack | `xhci-legacy.device` **5.x** |
+| Official release, 1.1 alpha.1 to 1.1.0-beta.1 | Neptune 6.x | `emu68-drivers-<ver>.lha` | Roadshow / AmiTCP / Miami, or the bundled stack | `xhci.device` **6.x** |
+| Newer, or a custom build with the dcache extensions | classic Poseidon 4.x | `emu68-drivers-<ver>-rangeops.lha` | bundled lwip-amiga | `xhci-legacy.device` **5.x** |
+| Newer, or a custom build with the dcache extensions | Neptune 6.x | `emu68-drivers-<ver>-rangeops.lha` | bundled lwip-amiga | `xhci.device` **6.x** |
 
 **Installing the bundled stack replaces your `bsdsocket.library`**, so
 Roadshow, AmiTCP and Miami stop working — and it installs its own `ping`,
@@ -118,8 +117,8 @@ take one only when chasing a problem. Installing a `-rangeops` archive on an
 Emu68 without the extensions is safe: the installer checks, says so, and stops
 without changing anything.
 
-Where the advice comes from — measured TCP throughput, netdev `genet.device` +
-the bundled stack, on a gigabit LAN:
+Where the advice comes from — measured TCP throughput, `genet.device`'s netdev
+interface + the bundled stack, on a gigabit LAN:
 
 | Archive | Emu68 | Download | Upload |
 |---|---|---|---|
@@ -127,8 +126,9 @@ the bundled stack, on a gigabit LAN:
 | standard | with the extensions | 698 Mb/s | 477 Mb/s |
 | `-rangeops` | with the extensions | near line rate | near line rate |
 
-Over the SANA-II backend the same stack measures about 290 Mb/s down and
-300 Mb/s up: SANA-II copies every packet and cannot offload checksums.
+Over `genet.device`'s SANA-II interface the same stack, `-rangeops` archive,
+measures about 440 Mb/s down and 650 Mb/s up: SANA-II copies every packet and
+cannot offload checksums.
 
 Why the extensions make that much difference is explained in
 [DEVELOPING.md](DEVELOPING.md#the-dcache-extensions).
@@ -157,7 +157,8 @@ each version.
 
 Each component is covered by its own licence: GPL-2.0, MPL-2.0/GPL-2.0+, and
 BSD-3-Clause for `lwip-amiga` (the TCP/IP stack, `bsdsocket.library` and the
-networking tools) and `emu68-vchiq-library` (the VideoCore parts). The per-file
+networking tools) and `emu68-vchiq-library` (the VideoCore parts); `emu68-rpivid-codec`
+(the H.265 backend) is GPL-2.0, as it carries the Linux driver's command generator. The per-file
 SPDX headers in the sources are authoritative, and the `Licenses` file in the archive maps every shipped binary to its licence.
 
 ## For developers

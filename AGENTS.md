@@ -13,11 +13,11 @@ Git submodules under `components/`, mostly with notes of their own. `add_stack_p
 | `emu68-pcie-library` | BCM2711 PCIe bring-up, BAR assignment, MSI, the openpci API |
 | `emu68-xhci-driver-context` | `xhci.device` 6.x (branch `context_release`): Neptune's context HCD ABI only, a **matched pair** with the Neptune repo (`rondoval/neptune-usb-stack`, local checkout `neptune`), whose `docs/neptune-context-hcd-abi.md` and `docs/implementation-plan.md` govern the ABI |
 | `emu68-xhci-driver-legacy` | `xhci-legacy.device` 5.x (branch `main`, same repo): classic V1/V2 HCD ABI, for Poseidon 4.x; also runs on Neptune, without real USB 3.0 or streams |
-| `emu68-genet-driver-netdev` | `genet.device` 4.x: the netdev ABI, for `lwip-amiga`, not SANA-II |
-| `emu68-genet-driver-sana2` | `genet.device` 3.x (branch `main`, same repo): SANA-II |
+| `emu68-genet-driver-netdev` | `genet.device` 5.x: one driver with both interfaces, the netdev ABI for `lwip-amiga` and SANA-II for any other stack; `genet-stats` |
 | `emu68-nvme-driver` | `nvme.device`: the Linux NVMe core adapted to AmigaOS |
 | `lwip-amiga` | lwIP plus `bsdsocket.library`; drives NICs over the netdev ABI |
 | `emu68-vchiq-library` | VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype`, `VCGrab`; experimental, unticked in the Install script |
+| `emu68-rpivid-codec` | `rpivid.codec`: an H.265 backend of `videocodec.library` on the Pi 4's HEVC block, GPL-2.0 (Linux's `hevc_d_h265.c` kept verbatim); its `AGENTS.md` and `docs/` hold the layout, architecture, design, hardware facts and test plan; the Install script copies it with videocodec on every machine (a Pi 3 has no HEVC block, so an H.265 session fails to open there) |
 
 ## Build
 
@@ -82,7 +82,7 @@ The reasons are in `emu68-common/cmake/` (`Emu68CommonModuleLayout.cmake`, `Emu6
 
 ## Output layout
 
-[*Output layout*](DEVELOPING.md#output-layout) is the single source. When touching install rules: `genet.device` ships in two lines with one filename, the alternate parked under `install/Storage/` for the Installer to choose, and `emu68check` ships in `C/` but is never copied to `C:`.
+[*Output layout*](DEVELOPING.md#output-layout) is the single source. When touching install rules: `emu68check` ships in `C/` but is never copied to `C:`.
 
 ## Installer
 
@@ -98,4 +98,4 @@ The reasons are in `emu68-common/cmake/` (`Emu68CommonModuleLayout.cmake`, `Emu6
 - Validate stack-wide from this repo when a change touches exported headers, generated SFD headers or CMake package config.
 - If a downstream component stops configuring, check that the upstream one was rebuilt **and installed** into the shared prefix first.
 - A missing component-local `build/` is no failure: the superbuild creates build trees lazily.
-- No automated tests at this level; correctness is verified on-device. `emu68-vchiq-library` has an on-device suite in its `tests/`.
+- No automated tests at this level; correctness is verified on-device. Three components have a pytest suite in their `tests/`, started with `tests/run.sh`: `emu68-genet-driver-netdev`, `emu68-vchiq-library` and `emu68-rpivid-codec`. They build on the common harness in `emu68-common/testing/` (its `README.md`), which they take from the install tree: build the stack before running one, and put shared test code there, not in a component.

@@ -32,31 +32,30 @@ build:
 
 Without them the drivers still work, but the cache housekeeping around every
 transfer has to be done the slow way - and the bundled TCP/IP stack, which is
-built around that housekeeping being cheap, ends up SLOWER than the plain old
-SANA-II driver. So on those releases there is no point installing the netdev
-Ethernet driver at all: take the standard archive and pair the SANA-II driver
-with Roadshow, AmiTCP or Miami. With the extensions, take the '-rangeops'
-archive and the netdev driver with the bundled lwip-amiga stack, which gets you
-close to gigabit line rate. USB is a separate, independent question: it depends
-only on which USB stack you run.
+built around that housekeeping being cheap, ends up SLOWER than Roadshow,
+AmiTCP or Miami. So on those releases take the standard archive with one of
+those stacks. With the extensions, take the '-rangeops' archive and the bundled
+lwip-amiga stack, which gets you close to gigabit line rate. The Ethernet
+driver is the same either way: genet.device serves every stack. USB is a
+separate, independent question: it depends only on which USB stack you run.
 
-The VideoCore parts (video, JPEG pictures, sound) need an Emu68 newer than
-1.1.0-beta.1, which has the extensions too, so for those take the '-rangeops'
-archive.
+The VideoCore parts (video, JPEG pictures, sound) and rpivid.codec (H.265 on
+the HEVC block of a Pi 4 or CM4) need an Emu68 newer than 1.1.0-beta.1, which
+has the extensions too, so for those take the '-rangeops' archive.
 
-The installer asks two separate questions - which genet.device, and which
-TCP/IP stack. They are independent now: since its 1.5 release the bundled
-lwip-amiga stack drives classic SANA-II Ethernet drivers as well as the
-netdev one, so the SANA-II genet works with either stack.
+The installer asks two separate questions - whether to install genet.device,
+and which TCP/IP stack. They are independent: genet.device works with either,
+the bundled lwip-amiga stack through its fast netdev interface, Roadshow,
+AmiTCP and Miami through its SANA-II one.
 
 Find your row:
 
-  Emu68            USB stack     Archive             Ethernet drv  TCP/IP     USB
-  ---------------  ------------  ------------------  ------------  ---------  ---
-  without dcache   Poseidon 4.x  <ver>.lha           SANA-II 3.x   any        5.x
-  without dcache   Neptune 6.x   <ver>.lha           SANA-II 3.x   any        6.x
-  with dcache      Poseidon 4.x  <ver>-rangeops.lha  netdev 4.x    bundled    5.x
-  with dcache      Neptune 6.x   <ver>-rangeops.lha  netdev 4.x    bundled    6.x
+  Emu68            USB stack     Archive             USB driver
+  ---------------  ------------  ------------------  ----------------------
+  without dcache   Poseidon 4.x  <ver>.lha           xhci-legacy.device 5.x
+  without dcache   Neptune 6.x   <ver>.lha           xhci.device 6.x
+  with dcache      Poseidon 4.x  <ver>-rangeops.lha  xhci-legacy.device 5.x
+  with dcache      Neptune 6.x   <ver>-rangeops.lha  xhci.device 6.x
 
   without dcache   official Emu68 releases, 1.1 alpha.1 to 1.1.0-beta.1
   with dcache      an Emu68 newer than 1.1.0-beta.1, or a custom build
@@ -64,7 +63,6 @@ Find your row:
   Neptune 6.x      Neptune, an incompatible fork of the Poseidon USB stack
                    (6.0-6.2 were published as "Poseidon for AmigaOS")
   <ver>.lha        emu68-drivers-@PACKAGE_VERSION@.lha
-  any              your existing Roadshow/AmiTCP/Miami, or the bundled stack
 
 INSTALLING THE BUNDLED STACK REPLACES YOUR bsdsocket.library, so Roadshow,
 AmiTCP and Miami stop working. It also installs its own ping, traceroute, arp,
@@ -95,9 +93,10 @@ using genet.device with the bundled lwip-amiga stack:
   Emu68 with the extensions,  standard archive   698 Mbit/s in, 477 out
   Emu68 with the extensions,  -rangeops archive  near line rate
 
-Those are the netdev driver. Over the SANA-II backend the same stack measures
-about 290 Mbit/s in and 300 out: SANA-II copies every packet and cannot offload
-checksums, so it gives up most of the netdev gain.
+Those use genet.device's netdev interface. Over its SANA-II interface the same
+stack, -rangeops archive, measures about 440 Mbit/s in and 650 out: SANA-II
+copies every packet and cannot offload checksums, so it gives up much of the
+netdev gain.
 
 
 COMPONENTS
@@ -134,22 +133,14 @@ xhci.device, xhci-legacy.device (DEVS:USBHardware/)
       driver was called xhci.device; to use the new one, select
       xhci-legacy.device in Trident (see AFTER INSTALLATION).
 
-genet.device (DEVS:Networks/)
-  Gigabit Ethernet for the port built into the Raspberry Pi 4 / CM4. It comes
-  in two versions and you pick ONE at install time (see WHAT TO INSTALL above);
-  the choice no longer decides your TCP/IP stack:
-
-    netdev  @GENET_VERSION@   the fast zero-copy driver. Only the bundled
-      lwip-amiga stack can open it, so Roadshow, AmiTCP and Miami cannot -
-      choosing it installs the bundled stack as well. Its netdev-stats
-      counter tool installs to C:.
-
-    SANA-II @GENET_SANA2_VERSION@  the classic driver. Works with a third-party
-      stack (Roadshow, AmiTCP, Miami) AND with the bundled one, which has
-      driven Ethernet SANA-II devices since lwip-amiga 1.5 - slower than
-      netdev either way. It rides in the archive under Storage/ and is
-      installed to DEVS:Networks/ only if you choose it; its genet-stats
-      counter tool then installs to C:.
+genet.device @GENET_VERSION@ (DEVS:Networks/)
+  Gigabit Ethernet for the port built into the Raspberry Pi 4 / CM4, for any
+  TCP/IP stack: the bundled lwip-amiga stack uses its fast zero-copy netdev
+  interface, Roadshow, AmiTCP and Miami its SANA-II one. One stack uses the
+  port at a time. It replaces both earlier lines, the netdev 4.x and the
+  SANA-II 3.x driver; lwip-amiga 1.4 to 1.8 take the slower SANA-II
+  interface unless their interface file says TYPE=NETDEV. Its counter tools, netdev-stats and genet-stats, install to C:
+  with it.
 
 lwip-amiga @LWIP_VERSION@ (LIBS:bsdsocket.library @BSDSOCKET_VERSION@)
   A modern TCP/IP stack. It provides the standard AmigaOS networking API under
@@ -163,7 +154,7 @@ lwip-amiga @LWIP_VERSION@ (LIBS:bsdsocket.library @BSDSOCKET_VERSION@)
   Installing it REPLACES any existing bsdsocket.library, and its commands
   below replace the Roadshow ones of the same name in C:. Neither is undone
   by re-running the installer - reinstall your old stack to go back.
-  Besides the netdev genet it also drives classic Ethernet-type SANA-II
+  Besides genet.device it also drives classic Ethernet-type SANA-II
   drivers - a Zorro or PCMCIA card, a USB Ethernet adapter - which it detects
   automatically; write a file for one by copying the commented sample from
   SYS:Storage/NetInterfaces/genet and editing DEVICE=. Interface files from
@@ -177,10 +168,11 @@ lwip-amiga @LWIP_VERSION@ (LIBS:bsdsocket.library @BSDSOCKET_VERSION@)
   holds more than one file the boot line picks the highest PRI= tooltype and
   silently skips the rest - keep the spares in SYS:Storage/NetInterfaces/.
 
-netdev-stats (C:)
-  Installed with the netdev genet.device: shows that driver's own counters and
-  interface statistics live. It speaks the netdev command set directly, so it
-  does not work against the SANA-II driver - that one has genet-stats.
+netdev-stats, genet-stats (C:)
+  Installed with genet.device, and working beside either stack. netdev-stats
+  shows the driver's own counters, loss points and link state live, and sets
+  its interrupt coalescing; genet-stats shows its SANA-II statistics in a
+  window.
 
 netinfo, mdns, GetNetStatus, ShowNetStatus (C:)
   Networking tools installed with the bundled stack. netinfo reports the
@@ -242,6 +234,15 @@ vchiq.device, videocodec.library @VCHIQ_VERSION@ (DEVS:, LIBS:) [experimental]
   (see AFTER INSTALLATION), and the installer leaves it unticked. What works
   and what does not yet: Documentation/emu68-vchiq-library/README.md.
 
+rpivid.codec @RPIVID_VERSION@ (LIBS:videocodec/) [experimental]
+  Installed with videocodec.library. A second codec driver: H.265 (HEVC)
+  video decoded by the HEVC block of a Pi 4 or CM4 and shown through the
+  VideoCore, so a program that plays video through videocodec.library
+  plays H.265 too: 8-bit H.265 up to 4096x2304, 4K at 30 fps full screen,
+  and 10-bit up to 1080p, shown at 8 bits. On a Pi 3, which has no HEVC
+  block, it offers no codec and H.265 videos fail to open (error -3).
+  Documentation/emu68-rpivid-codec/README.md has the details.
+
 VCGrab (SYS:Tools/Commodities)
   Installed with videocodec.library. A commodity that records an RTG screen
   to an MKV file on hot keys and grabs stills, the VideoCore doing the work.
@@ -301,12 +302,10 @@ Run the included 'Install' script using the Commodore Installer tool
 
 The first screen names the archive you are installing from. The installer
 then asks which USB drivers you want (xhci.device, xhci-legacy.device, both
-or none - ticked as the machine has them), ONE Ethernet driver (netdev genet,
-SANA-II genet, or none) and - unless you picked netdev, which answers it for
-you - which TCP/IP stack (the bundled lwip-amiga, or leave bsdsocket.library
-alone). The Ethernet and TCP/IP answers start at what you have installed; on
-a machine with no genet.device the standard archive suggests the SANA-II
-driver and the -rangeops archive netdev, as the table above recommends. On a
+or none - ticked as the machine has them), whether to install genet.device,
+and which TCP/IP stack (the bundled lwip-amiga, or leave bsdsocket.library
+alone). The TCP/IP answer starts at what you have installed: the bundled stack
+when it is there or no stack is, else your own stack stays. On a
 Poseidon 4.x machine whose xhci.device is still the 5.x driver, installing the
 6.x xhci.device replaces it; the installer asks first.
 
@@ -326,16 +325,15 @@ not replace unasked: it keeps what the machine has, takes the default answers
 above, and shows the result on that same last screen.
 
 When the bundled stack is to replace another one, the installer asks first.
-Answer 'Keep my stack' and your bsdsocket.library and commands stay; if you
-had picked netdev, which only the bundled stack can open, you get the SANA-II
-driver instead. Updating the bundled stack does not ask.
+Answer 'Keep my stack' and your bsdsocket.library and commands stay;
+genet.device works with them. Updating the bundled stack does not ask.
 
 A copy already on your system is left alone when it is the same file, and
 replaced when it is the same version from another archive (switching between
 the standard, -rangeops and -serial archives replaces every driver). Only a
 newer copy than the one in the archive makes the installer ask before going
-back. The chosen genet.device is always replaced, since both drivers share
-the name, and so is bsdsocket.library when you choose the bundled stack.
+back. bsdsocket.library is always replaced when you choose the bundled
+stack.
 
 If you are upgrading from 2.0 the installer shows one extra screen, telling
 you that the interface settings in your ENVARC:netstack.prefs are no longer
@@ -388,11 +386,12 @@ full set is:
              (and UNIT=) to your driver, and remove the genet file - only
              one interface can be up at a time.
 
-  SANA-II    If you kept your own TCP/IP stack, point it (Roadshow, AmiTCP,
-  + own      Miami) at 'genet.device' unit 0 before it can carry traffic.
-  stack      genet-stats shows the driver's counters.
+  own        If you kept your own TCP/IP stack, point it (Roadshow, AmiTCP,
+  stack      Miami) at 'genet.device' unit 0 before it can carry traffic.
+             genet-stats shows the driver's SANA-II statistics.
 
-  netdev     netdev-stats shows the driver's own counters and loss points.
+  genet      netdev-stats shows the driver's own counters and loss points,
+             with either stack.
 
   upgrading  Interface settings from a 2.0 ENVARC:netstack.prefs are ignored
   from 2.0   now; move them into DEVS:NetInterfaces/genet, which the
@@ -442,8 +441,7 @@ REQUIREMENTS
   - USB stack (for the xhci drivers), distributed separately. The 6.x driver
     needs Neptune 6.2 or newer (6.2 was published as "Poseidon for AmigaOS");
     the 5.x driver runs on classic Poseidon 4.x and on Neptune alike
-  - Networking (for genet.device): the netdev version requires the bundled
-    lwip-amiga stack; the SANA-II version works with either that or a
+  - Networking (for genet.device): the bundled lwip-amiga stack, or a
     third-party stack such as Roadshow, AmiTCP or Miami. The bundled stack
     needs no genet at all if you connect through an Ethernet-type SANA-II
     card or USB adapter
@@ -455,6 +453,8 @@ REQUIREMENTS
     the cma overlay
   - Pictures (vcjpeg.datatype): AmigaOS 3.2 (picture.datatype 47), and what
     videocodec.library needs
+  - H.265 (rpivid.codec): a Pi 4 or CM4, and what videocodec.library
+    needs
 
 
 SOURCE CODE
@@ -469,7 +469,10 @@ LICENSE
 Each component is covered by its own license: GPL-2.0, MPL-2.0/GPL-2.0+, and
 BSD-3-Clause for lwip-amiga (bsdsocket.library and the networking tools) and
 emu68-vchiq-library (vchiq.device, videocodec.library, videocore.audio,
-vcjpeg.datatype and the video tools).
+vcjpeg.datatype and the video tools). emu68-rpivid-codec (rpivid.codec and
+its tools) is GPL-2.0, with code from the Linux kernel's HEVC driver.
+nvme.device (GPL-2.0) contains the mounter, which is under the BSD-2-Clause
+license: its notice is Documentation/emu68-nvme-driver/LICENSE-mounter.
 A summary is in the 'Licenses' file at the top of this archive; the full text
 for every component is in the 'Documentation' drawer, one sub-drawer per
 component (with its README and release notes). Per-file SPDX headers in the
