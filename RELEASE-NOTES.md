@@ -31,11 +31,50 @@ Changes since 2.3.0.
 - **The bundled stack picks the fast interface by itself** (lwip-amiga 1.9,
   `bsdsocket.library` 4.109).
 
+## USB
+
+- **USB audio at high rates plays cleanly, and isochronous streams cost far less
+  CPU** (`xhci.device` 6.5). Completions come in batches every 1 to 8 ms instead of an
+  interrupt a packet, so 192 kHz playback on a CM4 takes about 8 % of the CPU instead
+  of about 40 %. Playback at 176.4 and 192 kHz no longer drops out.
+
+## Storage
+
+- **Emu68 virtual drives on NVMe** (`nvme.device` 1.8). A partition of type `0x76`
+  (MBR) or Emu68's GPT type that holds a whole RDB disk, as on Emu68's SD card, shows
+  up as a unit of `nvmevd.device`: its partitions mount and boot from there, and
+  HDToolBox can edit it. See "Virtual drives" in its README.
+- **Fixes:** namespaces with 4 KiB sectors report their real size to partitioning
+  tools; opening `nvme.device` with flag bit 0 set no longer makes the unit refuse
+  every request; a SCSI READ with `scsi_Flags` left at 0 no longer writes; filesystems
+  stored in a drive's RDB load in cases that failed before; a damaged RDB is no
+  longer used.
+
+## For developers
+
+- **The video libraries' headers and examples left `Developer/`** with the libraries:
+  `videocodec.h` and its backend interface, `VCPlay` and `VCShow` come with Kinora.
+  `devices/vchiq.h` stays.
+- **emu68-common 2.5.1:** `byteorder.h` works on either byte order, with `be16`/
+  `be32`/`be64` and the `__be` types; the device-tree helpers read their cells with
+  `be32()`.
+
+## Component versions in this release
+
 | Component | Version | Detailed notes |
 |---|---|---|
-| `genet.device` | **5.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v5.0/RELEASE-NOTES.md) |
+| `emu68-common` (support library) | **2.5.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-common/blob/v2.5.1/RELEASE-NOTES.md) |
+| `gic400.library` | 1.10 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-gic400-library/blob/v1.10/RELEASE-NOTES.md) |
+| `bcmpcie.library` | **2.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-pcie-library/blob/v2.7/RELEASE-NOTES.md) |
+| `openpci.library` | 45.13 | bundled with `bcmpcie.library` |
+| `xhci.device` (6.x) | **6.5** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v6.5/RELEASE-NOTES.md) |
+| `xhci-legacy.device` (5.x) | 5.6 | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-xhci-driver/blob/v5.6/RELEASE-NOTES.md) |
+| `genet.device` (netdev and SANA-II) | **5.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v5.0/RELEASE-NOTES.md) |
+| `nvme.device` | **1.8** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-nvme-driver/blob/v1.8/RELEASE-NOTES.md) |
 | lwip-amiga (TCP/IP stack) | **1.9** — ships `bsdsocket.library` **4.109** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.9/RELEASE-NOTES.md) |
-| VideoCore: `vchiq.device`, `videocore.audio` | **0.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-driver/blob/main/RELEASE-NOTES.md) |
+| VideoCore: `vchiq.device`, `videocore.audio` | **0.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-driver/blob/v0.7/RELEASE-NOTES.md) |
+
+New versions are in bold.
 
 ---
 

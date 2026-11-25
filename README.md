@@ -6,6 +6,13 @@ package gives you USB, Gigabit Ethernet with a TCP/IP stack, and NVMe solid-stat
 storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x — and,
 as an experiment, the link to the Pi's VideoCore and sound through it.
 
+> **Upgrading from 2.3?** The video libraries (`videocodec.library` with its
+> codecs, `vcjpeg.datatype`, `VCGrab`) come with [Kinora](https://github.com/rondoval/kinora)
+> now; this archive keeps `vchiq.device`, `videocore.audio` and the link's check,
+> `VCHIQInfo`, and leaves the video libraries you have alone. One `genet.device`
+> replaces both Ethernet drivers, so the installer no longer asks which; the bundled
+> stack uses its fast interface from lwip-amiga 1.9, which this archive brings.
+
 > **Upgrading from 2.0?** Two things can change how your machine comes up.
 > Network interfaces are no longer configured in `ENVARC:netstack.prefs` — each
 > one now has its own file in `DEVS:NetInterfaces/` — so a fixed address set up
@@ -32,7 +39,9 @@ as an experiment, the link to the Pi's VideoCore and sound through it.
   `AddNetInterface` / `RemoveNetInterface` / `NetShutdown` commands, the
   `NetLogViewer` commodity and the `NetSpeed` throughput monitor.
 - **Storage** — `nvme.device` drives an NVMe SSD attached to the PCIe slot, with
-  the `nvmeinfo` and `nvmeadm` tools for health and SMART data.
+  the `nvmeinfo` and `nvmeadm` tools for health and SMART data. Emu68's virtual
+  drives on it (a whole RDB disk in one partition, as on Emu68's SD card) appear as
+  units of `nvmevd.device` and boot from there.
 - **VideoCore (experimental)** — `vchiq.device` is the link to the Pi's VideoCore
   firmware, `videocore.audio` plays AHI sound through it to HDMI or the headphone
   jack, and `VCHIQInfo` checks the link. The installer leaves these unticked. The

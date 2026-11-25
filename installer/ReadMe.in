@@ -218,7 +218,11 @@ NetSpeed (C:, with icon)
   Workbench, or with "Run >NIL: C:NetSpeed".
 
 nvme.device @NVME_VERSION@ (DEVS:)
-  Storage driver for a PCIe-attached NVMe SSD.
+  Storage driver for a PCIe-attached NVMe SSD. Emu68's virtual drives on it
+  (a whole RDB disk in one partition, as on Emu68's SD card) appear as units
+  of nvmevd.device, which nvme.device makes itself: their partitions mount
+  and boot from there, and HDToolBox edits them with
+  SCSI_DEVICE_NAME=nvmevd.device.
 
 nvmeinfo, nvmeadm (C:)
   Tools for nvme.device, installed automatically with the driver. nvmeinfo
