@@ -26,8 +26,8 @@
 	url = https://github.com/rondoval/emu68-xhci-driver.git
 	branch = main
 [submodule "components/emu68-vchiq-library"]
-	path = components/emu68-vchiq-library
-	url = https://github.com/rondoval/emu68-vchiq-library.git
+	path = components/emu68-vchiq-driver
+	url = https://github.com/rondoval/emu68-vchiq-driver.git
 [submodule "components/emu68-rpivid-codec"]
 	path = components/emu68-rpivid-codec
 	url = https://github.com/rondoval/emu68-rpivid-codec.git

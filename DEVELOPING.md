@@ -14,8 +14,7 @@ has its own README and release notes; this guide covers the stack as a whole.
 | `emu68-genet-driver-netdev` | `genet.device`, for any stack (netdev and SANA-II), and `genet-stats` |
 | `emu68-nvme-driver` | `nvme.device`, `nvmeinfo`, `nvmeadm` |
 | `lwip-amiga` | `bsdsocket.library`, the network tools, and the `netdev` interface `genet.device` implements |
-| `emu68-vchiq-library` | The experimental VideoCore parts: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype`, `VCInfo`, `VCGrab` |
-| `emu68-rpivid-codec` | `rpivid.codec`, `videocodec.library`'s H.265 backend on the Pi 4's HEVC block; the Installer copies it with videocodec on every machine |
+| `emu68-vchiq-driver` | The experimental VideoCore parts: `vchiq.device`, `videocore.audio`, `VCHIQInfo` (the video libraries left for `videocodec-library` and `rpivid-codec`, which Kinora builds and ships, in 2.4.0) |
 
 The two xhci components are branches of one repo, `emu68-xhci-driver`
 (`context_release` and `main`).
@@ -88,7 +87,7 @@ EMU68_CONFIGURE_ARGS="-DEMU68_DEBUG_BACKEND=serial" ./scripts/docker-build.sh
 | `EMU68_PROFILE`, `EMU68_DEBUG`, `EMU68_TRACE` | empty | Components to pin to a tier |
 | `EMU68_FORCE_LVO_CACHE_OPS` | `OFF` | `ON` builds the standard archives, `OFF` the `-rangeops` ones: see [The dcache extensions](#the-dcache-extensions) |
 | `EMU68_LTO` | `ON` | Link-time optimization |
-| `EMU68_VCHIQ_TEST_HOOKS` | `OFF` | Test-only commands in `vchiq.device`, for `emu68-vchiq-library`'s test suite. Never for a release |
+| `EMU68_VCHIQ_TEST_HOOKS` | `OFF` | Test-only commands in `vchiq.device`, for `emu68-vchiq-driver`'s test suite. Never for a release |
 | `M68K_CPU` | `68040` | `68000` `68010` `68020` `68040` `68060` `68080` |
 | `M68K_FPU` | `hard` | `hard` `soft` |
 | `M68K_CRT` | `nix20` | `nix20` `nix13` `clib2` `ixemul` `newlib` |
@@ -140,16 +139,14 @@ section, unless a module is declared never to go there.
 
 | Path | Contents |
 |---|---|
-| `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library`, `bsdsocket.library`, `videocodec.library`, `videocodec/videocore.codec`, `videocodec/rpivid.codec` |
+| `install/LIBS/` | `gic400.library`, `bcmpcie.library`, `openpci.library`, `bsdsocket.library` |
 | `install/DEVS/` | `nvme.device`, `vchiq.device`, `AHI/videocore.audio`, `AudioModes/VIDEOCORE` |
 | `install/DEVS/USBHardware/` | `xhci.device` (6.x), `xhci-legacy.device` (5.x) |
 | `install/DEVS/Networks/` | `genet.device` |
-| `install/C/` | `lspci`, `nvmeadm`, `nvmeinfo`, `netdev-stats`, `genet-stats`, `VCInfo`, `emu68check`, and the network tools: `netinfo`, `mdns`, `GetNetStatus`, `ShowNetStatus`, `AddNetInterface`, `RemoveNetInterface`, `NetShutdown`, `arp`, `ping`, `traceroute`, `NetLogViewer` and `NetSpeed`, these two with icons |
-| `install/Classes/DataTypes/` | `vcjpeg.datatype` |
-| `install/Tools/Commodities/` | `VCGrab` and its icon |
-| `install/Storage/` | What the Installer places on request: `NetInterfaces/genet` (the interface sample), `DataTypes/VCJPEG` (`vcjpeg.datatype`'s descriptor) |
+| `install/C/` | `lspci`, `nvmeadm`, `nvmeinfo`, `netdev-stats`, `genet-stats`, `VCHIQInfo`, `emu68check`, and the network tools: `netinfo`, `mdns`, `GetNetStatus`, `ShowNetStatus`, `AddNetInterface`, `RemoveNetInterface`, `NetShutdown`, `arp`, `ping`, `traceroute`, `NetLogViewer` and `NetSpeed`, these two with icons |
+| `install/Storage/` | What the Installer places on request: `NetInterfaces/genet` (the interface sample) |
 | `install/ENVARC/` | `netstack.prefs.default`, which the Installer copies to `ENVARC:` when there are no prefs yet |
-| `install/Developer/` | In the archive only: `Tools/` (`VCTest`, `VPUPlay`), `Examples/videocodec/`, `Autodocs/`, `FD/`. The `package` target adds `include/`, the public headers |
+| `install/Developer/` | In the archive only: `Tools/` (`VCHIQTest`), `Autodocs/`, `FD/`. The `package` target adds `include/`, the public headers |
 | `install/include/`, `install/lib/` | Build-time headers and static libraries, including the `netdev` header and its CMake package |
 
 The xhci lines have their own names and can sit side by side. `emu68check` is run
@@ -181,8 +178,8 @@ An Emu68 with the extensions advertises them as the `/emu68` device-tree propert
 `dcache-range-ops`. Drivers built with the inline path check it
 (`emu68_has_dcache_range_ops()` in `emu68_features.h`) and refuse to load on firmware
 without it, rather than take a Line-F trap. The option reaches only the components that
-use `cache_ops.h`: `emu68-xhci-driver-context`, `emu68-genet-driver-netdev`, `emu68-nvme-driver`,
-`emu68-vchiq-library` and `emu68-rpivid-codec`.
+use `cache_ops.h`: `emu68-xhci-driver-context`, `emu68-genet-driver-netdev`, `emu68-nvme-driver`
+and `emu68-vchiq-driver`.
 
 ## Packaging
 
@@ -191,10 +188,10 @@ use `cache_ops.h`: `emu68-xhci-driver-context`, `emu68-genet-driver-netdev`, `em
 ```
 
 This makes `build/package/emu68-drivers-<version>[-<variant>].lha`. The archive holds
-the runtime files (`LIBS/`, `DEVS/`, `C/`, `Classes/`, `Tools/`, `Storage/`, `ENVARC/`)
+the runtime files (`LIBS/`, `DEVS/`, `C/`, `Storage/`, `ENVARC/`)
 beside the Install script, which runs from the unpacked archive, and also:
 
-- `Developer/`: the public headers, autodocs, FD files, examples and test tools;
+- `Developer/`: the public headers, autodocs, FD files and test tools;
 - `Documentation/<component>/`: each component's README, licence and release notes;
 - `Licenses`: a generated map of every component and shipped binary to its licence;
 - `RELEASE-NOTES.md`: the stack's release notes.
@@ -206,22 +203,19 @@ on every configure, so edit the templates.
 ## Testing
 
 Testing happens on real hardware: there is no automated suite at this level.
-Three components have a pytest suite of their own, each started with its
+Two components have a pytest suite of their own, each started with its
 `tests/run.sh`:
 
 - `emu68-genet-driver-netdev`: a host tier (the driver's own sources under vamos,
   code gates) and hardware tiers; its `tests/README.md`.
-- `emu68-vchiq-library`: an on-device suite, described in its developer guide.
-- `emu68-rpivid-codec`: an on-device suite (its developer guide and
-  `docs/test-plan.md`), and host checks that need no machine (`tests/host/run.sh`:
-  the parser against FFmpeg's traces of the HEVC conformance set, the command
-  lists, the damaged streams).
+- `emu68-vchiq-driver`: an on-device suite of `vchiq.device` and `videocore.audio`,
+  described in its developer guide. The video libraries' suites went with them
+  to `videocodec-library` and `rpivid-codec`, and run in Kinora's tree.
 
 The suites share one test harness, in `emu68-common/testing/` (its `README.md`):
 the Amiga through amimcp, the install with the machine's own files kept, the
 debug log, the test programs' output grammar, baselines and the report. The
-stack build installs it to `install/share/emu68-testing/` (and the vchiq
-library's VideoCore part to `install/share/vchiq-testing/`), where the suites
+stack build installs it to `install/share/emu68-testing/`, where the suites
 find it, so build the stack before running one. A component that gets its first
 suite starts from that README.
 `sockbench` (lwip-amiga's throughput bench) and `diskbench` (the mass-storage bench in

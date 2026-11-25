@@ -2,17 +2,21 @@
 
 Changes since 2.3.0.
 
-## New: H.265 video (experimental)
+## The video libraries moved to Kinora
 
-- **`rpivid.codec` decodes H.265 on the Pi's own HEVC block**, as a second codec
-  driver of `videocodec.library`: a program that plays video through the library
-  plays H.265 too. 8-bit H.265 up to 4096x2304, so 4K plays full screen at 30 fps,
-  and 10-bit up to 1080p, shown at 8 bits. A Pi 4 or CM4 has the block; the
-  installer copies `rpivid.codec` with videocodec, and on a Pi 3, which has none, it
-  offers no codec and an H.265 video fails to open (error -3).
-- **`videocodec.library` shows H.265 on screen**: it puts the VideoCore's converter
-  behind the H.265 decoder, so a program asks for the RGB format and size it wants,
-  as for H.264.
+- **`videocodec.library` and everything on it come with Kinora now**, the film
+  player, from its own archive and Installer: `videocore.codec`, `rpivid.codec`
+  (H.265 on the HEVC block of a Pi 4 or CM4, new), `vcjpeg.datatype`, `VCGrab` and
+  `VCInfo`. Kinora's Installer also installs them without the player, for other
+  programs: <https://github.com/rondoval/kinora>.
+- **This archive keeps the link they need**, `vchiq.device`, with `videocore.audio`
+  on it. The installer offers `vchiq.device` as a part of its own, unticked, with
+  `VCHIQInfo`.
+- **`VCInfo` is `VCHIQInfo` here**, and checks the link only: Emu68, the `cma`
+  overlay, `vchiq.device`, the firmware and its temperature, throttling and
+  `gpu_mem`. Kinora's `VCInfo` checks the video libraries.
+- **Nothing installed is removed.** Video libraries installed from 2.3 keep working
+  until Kinora's Installer replaces them, the old `C:VCInfo` with them.
 
 ## Networking
 
@@ -27,21 +31,11 @@ Changes since 2.3.0.
 - **The bundled stack picks the fast interface by itself** (lwip-amiga 1.9,
   `bsdsocket.library` 4.109).
 
-## VideoCore
-
-- **More pixel formats through the VideoCore converter**: NV21, planar 4:2:2, the
-  packed 4:2:2 orders UYVY, YVYU and VYUY, and 32-bit RGB without alpha, both ways,
-  and YV12 out.
-- **For programmers**: `VC_CodecOfTag()` maps a container's FourCC to its codec, and
-  `libraries/videocodec.h` names the codecs and pixel formats codec drivers to come
-  will take.
-
 | Component | Version | Detailed notes |
 |---|---|---|
 | `genet.device` | **5.0** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-genet-driver/blob/v5.0/RELEASE-NOTES.md) |
 | lwip-amiga (TCP/IP stack) | **1.9** — ships `bsdsocket.library` **4.109** | [RELEASE-NOTES.md](https://github.com/rondoval/lwip-amiga/blob/v1.9/RELEASE-NOTES.md) |
-| `rpivid.codec` (H.265) | **0.1** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-rpivid-codec/blob/main/RELEASE-NOTES.md) |
-| VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype` | **0.6** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-library/blob/main/RELEASE-NOTES.md) |
+| VideoCore: `vchiq.device`, `videocore.audio` | **0.7** | [RELEASE-NOTES.md](https://github.com/rondoval/emu68-vchiq-driver/blob/main/RELEASE-NOTES.md) |
 
 ---
 
@@ -92,9 +86,7 @@ take the `-rangeops` archive. `VCInfo` checks the setup and says what to fix.
 
 - **`videocodec`: hardware video and pictures.** `videocodec.library` decodes H.264
   and MJPEG video and JPEG, PNG, GIF, BMP, TGA and PPM pictures on the Pi's VideoCore,
-  encodes H.264 and JPEG, and scales pictures, while the 68k stays almost idle. A version of
-  MintVID plays videos through it (MintVID itself may never carry this: see the
-  ReadMe).
+  encodes H.264 and JPEG, and scales pictures, while the 68k stays almost idle.
 - **`VCGrab`** comes with it: a commodity that records an RTG screen to an MKV file,
   and grabs stills, at about 5% of the 68k for 1080p at 30 fps.
 - **`vcjpeg.datatype`: faster JPEG pictures in every program** that loads pictures

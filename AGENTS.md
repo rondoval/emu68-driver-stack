@@ -16,8 +16,7 @@ Git submodules under `components/`, mostly with notes of their own. `add_stack_p
 | `emu68-genet-driver-netdev` | `genet.device` 5.x: one driver with both interfaces, the netdev ABI for `lwip-amiga` and SANA-II for any other stack; `genet-stats` |
 | `emu68-nvme-driver` | `nvme.device`: the Linux NVMe core adapted to AmigaOS |
 | `lwip-amiga` | lwIP plus `bsdsocket.library`; drives NICs over the netdev ABI |
-| `emu68-vchiq-library` | VideoCore: `vchiq.device`, `videocodec.library`, `videocore.audio`, `vcjpeg.datatype`, `VCGrab`; experimental, unticked in the Install script |
-| `emu68-rpivid-codec` | `rpivid.codec`: an H.265 backend of `videocodec.library` on the Pi 4's HEVC block, GPL-2.0 (Linux's `hevc_d_h265.c` kept verbatim); its `AGENTS.md` and `docs/` hold the layout, architecture, design, hardware facts and test plan; the Install script copies it with videocodec on every machine (a Pi 3 has no HEVC block, so an H.265 session fails to open there) |
+| `emu68-vchiq-driver` | VideoCore: `vchiq.device`, `videocore.audio`, `VCHIQInfo`; experimental, unticked in the Install script. The video libraries (`videocodec.library`, its codec drivers, `vcjpeg.datatype`, `VCGrab`, `VCInfo`) left in 2.4.0 for `videocodec-library` and `rpivid-codec`, which Kinora builds and ships |
 
 ## Build
 
@@ -98,4 +97,4 @@ The reasons are in `emu68-common/cmake/` (`Emu68CommonModuleLayout.cmake`, `Emu6
 - Validate stack-wide from this repo when a change touches exported headers, generated SFD headers or CMake package config.
 - If a downstream component stops configuring, check that the upstream one was rebuilt **and installed** into the shared prefix first.
 - A missing component-local `build/` is no failure: the superbuild creates build trees lazily.
-- No automated tests at this level; correctness is verified on-device. Three components have a pytest suite in their `tests/`, started with `tests/run.sh`: `emu68-genet-driver-netdev`, `emu68-vchiq-library` and `emu68-rpivid-codec`. They build on the common harness in `emu68-common/testing/` (its `README.md`), which they take from the install tree: build the stack before running one, and put shared test code there, not in a component.
+- No automated tests at this level; correctness is verified on-device. Two components have a pytest suite in their `tests/`, started with `tests/run.sh`: `emu68-genet-driver-netdev` and `emu68-vchiq-driver`. They build on the common harness in `emu68-common/testing/` (its `README.md`), which they take from the install tree: build the stack before running one, and put shared test code there, not in a component.

@@ -462,25 +462,20 @@
 
 ; Bit layout of the selection mask:
 ;   0 gic400.library  1 bcmpcie.library  2 openpci.library  3 nvme
-;   4 videocodec  5 videocore.audio  6 vcjpeg.datatype
+;   4 vchiq.device  5 videocore.audio
 ; Default 8 = bit 3 (nvme), plus bit 2 (openpci) unless another openpci.library
-; is installed; libraries derived as needed.  videocodec (vchiq.device,
-; videocodec.library, its backend and tools) is experimental: off.
-; videocore.audio (an AHI driver) needs only vchiq.device, which it brings with
-; VCInfo to check the setup; off.  vcjpeg.datatype (JPEG pictures through
-; videocodec) brings videocodec along; off.
-; Each of the three starts ticked once installed, so that an upgrade replaces it;
-; videocodec goes by its library, as the sound alone brings vchiq.device too.
-; videocodec brings rpivid.codec, its H.265 backend, on every machine.  A Pi 3
-; has no HEVC block: there an H.265 video fails to open (error -9), and nothing
-; else changes.
+; is installed; libraries derived as needed.  vchiq.device (the VideoCore link,
+; with VCHIQInfo to check it) is experimental: off.  videocore.audio (an AHI
+; driver) brings vchiq.device along; off.  Each starts ticked once installed, so
+; that an upgrade replaces it.  The video libraries (videocodec.library and its
+; codecs, vcjpeg.datatype, VCGrab) come with Kinora since 2.4.0: they need
+; vchiq.device from here.  An installed copy of them is left alone.
 (set #openpci-rc (run "C/emu68check OPENPCI" (safe)))
 (set #openpci-other (AND (<> #openpci-rc 0) (<> #openpci-rc 10)))
 (set #features-default 8)
 (if (NOT #openpci-other) (set #features-default 12))
-(if (exists "LIBS:videocodec.library" (noreq)) (set #features-default (+ #features-default 16)))
+(if (exists "DEVS:vchiq.device" (noreq)) (set #features-default (+ #features-default 16)))
 (if (exists "DEVS:AHI/videocore.audio" (noreq)) (set #features-default (+ #features-default 32)))
-(if (exists "SYS:Classes/DataTypes/vcjpeg.datatype" (noreq)) (set #features-default (+ #features-default 64)))
 (set #choice-gic400 "")
 (set #choice-bcmpcie "")
 (set #help-libs "")
@@ -508,30 +503,23 @@
                 "default, and the VideoCore parts once they are\n"
                 "installed.  Tools come with what they serve:\n"
                 "nvmeinfo and nvmeadm with nvme.device, lspci\n"
-                "with the PCIe library, VCInfo and VCGrab with\n"
-                "videocodec.\n\n"
+                "with the PCIe library, VCHIQInfo with\n"
+                "vchiq.device.\n\n"
                 #help-libs
                 "openpci.library lets programs that use the\n"
                 "openpci API, such as identify.library, see the\n"
                 "Pi's PCIe devices.  It is unticked when another\n"
                 "openpci.library is installed - most likely a\n"
                 "PCI board's, which this one would replace.\n\n"
-                "videocodec (VideoCore video and pictures) is\n"
-                "experimental and needs the cma overlay in the\n"
-                "Pi's config.txt, and gpu_mem=128 there for\n"
-                "pictures over 24 megapixels and two videos at\n"
-                "once.  It also brings rpivid.codec, which\n"
-                "decodes H.265 video on the HEVC block of a\n"
-                "Pi 4 or CM4.\n\n"
+                "vchiq.device is the link to the Pi's VideoCore,\n"
+                "experimental; it needs the cma overlay in the\n"
+                "Pi's config.txt.  The video libraries that\n"
+                "decode on the VideoCore come with Kinora and\n"
+                "need it.  VCHIQInfo checks the link.\n\n"
                 "videocore.audio is an AHI driver that plays\n"
                 "through the VideoCore to HDMI or the headphone\n"
                 "jack; it needs AHI, and brings vchiq.device and\n"
-                "VCInfo along.\n\n"
-                "vcjpeg.datatype decodes JPEG pictures of about\n"
-                "2 megapixels and more on the VideoCore, for every\n"
-                "program that loads pictures through datatypes;\n"
-                "the rest stay with your JPEG datatype.  It\n"
-                "brings videocodec along.\n\n"
+                "VCHIQInfo along.\n\n"
                 @askoptions-help
             )
             (choices
@@ -539,9 +527,8 @@
                 #choice-bcmpcie
                 "openpci.library (for identify.library)"
                 "nvme.device     (NVMe storage)"
-                "videocodec      (video, experimental)"
+                "vchiq.device    (VideoCore link, experimental)"
                 "videocore.audio (sound, experimental)"
-                "vcjpeg.datatype (JPEG, experimental)"
             )
             (default #features-default)
         )
@@ -554,9 +541,7 @@
 (set #install-nvme    (IN #features 3))
 (set #install-vchiq   (IN #features 4))
 (set #install-ahi     (IN #features 5))
-(set #install-vcjpeg  (IN #features 6))
-(if #install-vcjpeg (set #install-vchiq 1))
-(set #install-link (OR #install-vchiq #install-ahi)) ; vchiq.device and VCInfo
+(set #install-link (OR #install-vchiq #install-ahi)) ; vchiq.device and VCHIQInfo
 
 ; Another openpci.library is replaced only when the user says so.
 (if (AND #install-openpci #openpci-other)
@@ -677,30 +662,13 @@
 (if #install-link
     (
         (set #need-devs (+ #need-devs (getsize "DEVS/vchiq.device")))
-        (set #need-c    (+ #need-c (getsize "C/VCInfo")))
-    )
-)
-; SYS:Tools, SYS:Classes and SYS:Storage are on the system volume: counted with
-; LIBS:, which is SYS:Libs.
-(if #install-vchiq
-    (
-        (set #need-libs (+ #need-libs (getsize "LIBS/videocodec.library")))
-        (set #need-libs (+ #need-libs (getsize "LIBS/videocodec/videocore.codec")))
-        (set #need-libs (+ #need-libs (getsize "LIBS/videocodec/rpivid.codec")))
-        (set #need-libs (+ #need-libs (getsize "Tools/Commodities/VCGrab")))
-        (set #need-libs (+ #need-libs (getsize "Tools/Commodities/VCGrab.info")))
+        (set #need-c    (+ #need-c (getsize "C/VCHIQInfo")))
     )
 )
 (if #install-ahi
     (
         (set #need-devs (+ #need-devs (getsize "DEVS/AHI/videocore.audio")))
         (set #need-devs (+ #need-devs (getsize "DEVS/AudioModes/VIDEOCORE")))
-    )
-)
-(if #install-vcjpeg
-    (
-        (set #need-libs (+ #need-libs (getsize "Classes/DataTypes/vcjpeg.datatype")))
-        (set #need-libs (+ #need-libs (getsize "Storage/DataTypes/VCJPEG")))
     )
 )
 (if #install-stack
@@ -781,9 +749,7 @@
 (if #install-link
     (
         (set #sum-video "vchiq.device")
-        (if #install-vchiq (set #sum-video "videocodec"))
         (if #install-ahi (set #sum-video (cat #sum-video ", videocore.audio")))
-        (if #install-vcjpeg (set #sum-video (cat #sum-video ", vcjpeg")))
         (set #sum (cat #sum "* VideoCore: " #sum-video "\n"))
     )
 )
@@ -848,33 +814,13 @@
     )
 )
 
-; VideoCore: vchiq.device for any of the three parts; videocodec.library, its
-; backends in LIBS:videocodec/ (videocore.codec, and rpivid.codec, the H.265 one)
-; and VCGrab for all but the sound alone; VCInfo, kept in lockstep as nvme's tools
-; are with the driver.  VCGrab is a commodity, so it goes with the others; its icon
-; only when there is none, so that edited tooltypes stay.  The test tools
-; (Developer/Tools: VCTest, VPUPlay) and the examples
-; (Developer/Examples/videocodec) stay in the archive.
+; VideoCore: vchiq.device for either part, and VCHIQInfo, kept in lockstep as
+; nvme's tools are with the driver.  The test rig (Developer/Tools/VCHIQTest)
+; stays in the archive.
 (set #bundled-vchiq 0)
-(set #bundled-videocodec 0)
 (if #install-link (set #bundled-vchiq (P_copyver "DEVS/vchiq.device" "DEVS:" "vchiq.device")))
-(if #install-vchiq
-    (
-        (set #bundled-videocodec (P_copyver "LIBS/videocodec.library" "LIBS:" "videocodec.library"))
-        (makedir "LIBS:videocodec")
-        (P_copyver "LIBS/videocodec/videocore.codec" "LIBS:videocodec" "videocore.codec")
-        (P_copyver "LIBS/videocodec/rpivid.codec" "LIBS:videocodec" "rpivid.codec")
-        (if (NOT (exists "SYS:Tools/Commodities" (noreq))) (makedir "SYS:Tools/Commodities"))
-        (if (OR #bundled-videocodec (NOT (exists "SYS:Tools/Commodities/VCGrab" (noreq))))
-            (P_copyforce "Tools/Commodities/VCGrab" "SYS:Tools/Commodities")
-        )
-        (if (NOT (exists "SYS:Tools/Commodities/VCGrab.info" (noreq)))
-            (P_copyforce "Tools/Commodities/VCGrab.info" "SYS:Tools/Commodities")
-        )
-    )
-)
-(if (AND #install-link (OR #bundled-vchiq (OR #bundled-videocodec (NOT (exists "C:VCInfo" (noreq))))))
-    (P_copyforce "C/VCInfo" "C:")
+(if (AND #install-link (OR #bundled-vchiq (NOT (exists "C:VCHIQInfo" (noreq)))))
+    (P_copyforce "C/VCHIQInfo" "C:")
 )
 
 ; VideoCore sound: the AHI driver and its mode file, always replaced by the
@@ -888,30 +834,6 @@
     )
 )
 
-; VideoCore pictures: the class, and its descriptor in SYS:Storage/DataTypes, not
-; DEVS:DataTypes.  datatypes.library tries, among the descriptors with a function
-; and no mask, the one added last first, so VCJPEG must be added after the
-; system's JPEG descriptors: from S:User-Startup, which runs after
-; Startup-Sequence's AddDataTypes REFRESH.  Removing the line restores them.
-(if #install-vcjpeg
-    (
-        (P_copyver "Classes/DataTypes/vcjpeg.datatype" "SYS:Classes/DataTypes" "vcjpeg.datatype")
-        (if (NOT (exists "SYS:Storage/DataTypes" (noreq))) (makedir "SYS:Storage/DataTypes"))
-        (P_copyforce "Storage/DataTypes/VCJPEG" "SYS:Storage/DataTypes")
-        (startup "vcjpeg.datatype"
-            (prompt
-                (cat
-                    "vcjpeg.datatype takes JPEG pictures once its\n"
-                    "descriptor is added at boot, after the\n"
-                    "system's.  Add this line to S:User-Startup?\n\n"
-                    "AddDataTypes SYS:Storage/DataTypes/VCJPEG QUIET"
-                )
-            )
-            (help @startup-help)
-            (command "AddDataTypes SYS:Storage/DataTypes/VCJPEG QUIET")
-        )
-    )
-)
 (complete 55)
 
 ; Bundled stack -> LIBS:bsdsocket.library (force-replaced), its
@@ -1092,14 +1014,14 @@
     (if #install-ahi
         (set #done-msg
             (cat #done-msg
-                "* video, sound: dtoverlay=cma in config.txt, a\n"
-                "  VideoCore mode in AHI prefs - see ReadMe\n"
+                "* VideoCore, sound: dtoverlay=cma in config.txt,\n"
+                "  a VideoCore mode in AHI prefs - see ReadMe\n"
             )
         )
         (set #done-msg
             (cat #done-msg
-                "* video: dtoverlay=cma in the Pi's config.txt,\n"
-                "  gpu_mem=128 for two videos - see ReadMe\n"
+                "* VideoCore: dtoverlay=cma in the Pi's config.txt;\n"
+                "  video comes with Kinora - see ReadMe\n"
             )
         )
     )

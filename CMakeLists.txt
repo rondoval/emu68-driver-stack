@@ -74,8 +74,7 @@ set(EMU68_DEBUG_COMPONENTS
     emu68-genet-driver-netdev
     emu68-nvme-driver
     lwip-amiga
-    emu68-vchiq-library
-    emu68-rpivid-codec)
+    emu68-vchiq-driver)
 
 # Force cache_ops.h's cache_pre_dma()/cache_post_dma() through the exec LVO
 # instead of the emu68 inline LINE-F fast path (see emu68-common/include/cache_ops.h).
@@ -87,7 +86,7 @@ option(EMU68_FORCE_LVO_CACHE_OPS
     "Route cache_pre_dma()/cache_post_dma() through the exec LVO instead of the emu68 inline fast path"
     OFF)
 
-# vchiq.device's test-only commands, for emu68-vchiq-library's hardware test cycle
+# vchiq.device's test-only commands, for emu68-vchiq-driver's hardware test cycle
 # (tests/: the repair test).  Never set for a release.
 option(EMU68_VCHIQ_TEST_HOOKS
     "Build vchiq.device with the test-only commands of its hardware test cycle"
@@ -99,8 +98,7 @@ set(EMU68_CACHE_OPS_COMPONENTS
     emu68-xhci-driver-context
     emu68-genet-driver-netdev
     emu68-nvme-driver
-    emu68-vchiq-library
-    emu68-rpivid-codec)
+    emu68-vchiq-driver)
 
 # The tier-override lists, in ascending rung order.  A component may appear in at
 # most one; each entry must name a debug-emitting component (or the list is ALL).
@@ -178,8 +176,7 @@ set(EMU68_XHCI_LEGACY_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68
 set(EMU68_GENET_NETDEV_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-genet-driver-netdev"  CACHE PATH "Path to emu68-genet-driver-netdev (genet.device: netdev and SANA-II) sources")
 set(EMU68_NVME_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-nvme-driver"   CACHE PATH "Path to emu68-nvme-driver sources")
 set(LWIP_AMIGA_SOURCE_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/components/lwip-amiga"          CACHE PATH "Path to lwip-amiga sources")
-set(EMU68_VCHIQ_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-vchiq-library" CACHE PATH "Path to emu68-vchiq-library sources")
-set(EMU68_RPIVID_SOURCE_DIR        "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-rpivid-codec"  CACHE PATH "Path to emu68-rpivid-codec sources")
+set(EMU68_VCHIQ_SOURCE_DIR         "${CMAKE_CURRENT_SOURCE_DIR}/components/emu68-vchiq-driver" CACHE PATH "Path to emu68-vchiq-driver sources")
 
 # Validate required paths
 foreach(required_path
@@ -192,8 +189,7 @@ foreach(required_path
     EMU68_GENET_NETDEV_SOURCE_DIR
     EMU68_NVME_SOURCE_DIR
     LWIP_AMIGA_SOURCE_DIR
-    EMU68_VCHIQ_SOURCE_DIR
-    EMU68_RPIVID_SOURCE_DIR)
+    EMU68_VCHIQ_SOURCE_DIR)
     if(NOT EXISTS "${${required_path}}")
         message(FATAL_ERROR
             "Required path does not exist: ${required_path}='${${required_path}}'\n"
@@ -237,9 +233,9 @@ function(add_stack_project target source_dir)
         set(_cache_ops_args -DEMU68_FORCE_LVO_CACHE_OPS:BOOL=${EMU68_FORCE_LVO_CACHE_OPS})
     endif()
 
-    # vchiq.device's test hooks exist in emu68-vchiq-library alone.
+    # vchiq.device's test hooks exist in emu68-vchiq-driver alone.
     set(_test_hook_args "")
-    if(target STREQUAL "emu68-vchiq-library")
+    if(target STREQUAL "emu68-vchiq-driver")
         set(_test_hook_args -DVCHIQ_TEST_HOOKS:BOOL=${EMU68_VCHIQ_TEST_HOOKS})
     endif()
 
@@ -302,16 +298,11 @@ add_stack_project(lwip-amiga "${LWIP_AMIGA_SOURCE_DIR}" DEPENDS emu68-common)
 # Netdev package it consumes) and SANA-II; genet-stats with it.
 add_stack_project(emu68-genet-driver-netdev "${EMU68_GENET_NETDEV_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library lwip-amiga)
 add_stack_project(emu68-nvme-driver ${EMU68_NVME_SOURCE_DIR} DEPENDS emu68-pcie-library emu68-common)
-# VideoCore VPU: vchiq.device (the VCHIQ transport), videocodec.library (the codec API),
-# videocore.codec (its MMAL backend: codecs, ISP), the VCInfo check and the VCGrab recorder; the test rig
-# (VCTest, VPUPlay) and the examples (VCPlay, VCShow) go to Developer/ only.
-add_stack_project(emu68-vchiq-library "${EMU68_VCHIQ_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
-
-# The Pi 4's HEVC block: rpivid.codec, an H.265 backend of videocodec.library, with
-# its probe and replay tools in Developer/Tools.  GPL-2.0 (Linux's command generator).
-# The Install script copies it with videocodec on every machine; on a Pi 3, which has
-# no HEVC block, an H.265 session fails to open.
-add_stack_project(emu68-rpivid-codec "${EMU68_RPIVID_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library emu68-vchiq-library)
+# VideoCore VPU: vchiq.device (the VCHIQ transport), videocore.audio (an AHI driver on
+# the firmware's audio service) and the VCHIQInfo check; the test rig (VCHIQTest) goes
+# to Developer/ only.  The video libraries (videocodec.library, its backends
+# videocore.codec and rpivid.codec, vcjpeg.datatype, VCGrab) are Kinora's since 2.4.0.
+add_stack_project(emu68-vchiq-driver "${EMU68_VCHIQ_SOURCE_DIR}" DEPENDS emu68-common emu68-gic400-library)
 
 get_property(_stack_targets GLOBAL PROPERTY EMU68_STACK_TARGETS)
 add_custom_target(stack ALL DEPENDS ${_stack_targets})
@@ -348,7 +339,6 @@ emu68_read_version(GENET_VERSION   "${EMU68_GENET_NETDEV_SOURCE_DIR}/CMakeLists.
 emu68_read_version(NVME_VERSION    "${EMU68_NVME_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(LWIP_VERSION    "${LWIP_AMIGA_SOURCE_DIR}/CMakeLists.txt")
 emu68_read_version(VCHIQ_VERSION   "${EMU68_VCHIQ_SOURCE_DIR}/CMakeLists.txt")
-emu68_read_version(RPIVID_VERSION  "${EMU68_RPIVID_SOURCE_DIR}/CMakeLists.txt")
 
 # lwip-amiga's release version is LWIP_VERSION; the shipped bsdsocket.library keeps ABI
 # major 4 (the AmiTCP/Roadshow contract) with its revision derived from that release
@@ -373,8 +363,7 @@ set(EMU68_DOC_COMPONENTS
     "emu68-genet-driver-netdev|${EMU68_GENET_NETDEV_SOURCE_DIR}|GPL-2.0 / MPL-2.0 (per-file SPDX)|GENET_VERSION"
     "emu68-nvme-driver|${EMU68_NVME_SOURCE_DIR}|GPL-2.0, nvme.device contains the BSD-2-Clause mounter|NVME_VERSION|mounter=nvme.device/mounter/LICENSE"
     "lwip-amiga|${LWIP_AMIGA_SOURCE_DIR}|BSD-3-Clause|LWIP_VERSION"
-    "emu68-vchiq-library|${EMU68_VCHIQ_SOURCE_DIR}|BSD-3-Clause|VCHIQ_VERSION"
-    "emu68-rpivid-codec|${EMU68_RPIVID_SOURCE_DIR}|GPL-2.0, with GPL-2.0-or-later code from Linux's HEVC driver|RPIVID_VERSION")
+    "emu68-vchiq-driver|${EMU68_VCHIQ_SOURCE_DIR}|BSD-3-Clause|VCHIQ_VERSION")
 
 # Describe the debug backend for the generated ReadMe so each archive is
 # self-describing about which build variant it is.
@@ -487,10 +476,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/installer/VERSIONS.txt"
   openpci.library        ${OPENPCI_VERSION}
   bsdsocket.library      ${BSDSOCKET_VERSION}
   vchiq.device           ${VCHIQ_VERSION}
-  videocodec.library     ${VCHIQ_VERSION}
   videocore.audio        ${VCHIQ_VERSION}
-  vcjpeg.datatype        ${VCHIQ_VERSION}
-  rpivid.codec           ${RPIVID_VERSION}
 
 Archive variants:
 
@@ -526,10 +512,10 @@ extensions, so they need a newer Emu68 or a custom build:
 On any other firmware the -rangeops xhci/genet/nvme drivers refuse to load
 rather than crash, so use the standard archives there.
 
-The VideoCore parts (video, JPEG pictures, sound) and rpivid.codec (H.265 on
-the HEVC block of a Pi 4 or CM4), all experimental, need an Emu68 newer than
-1.1.0-beta.1, which has the extensions too, so for those take the -rangeops
-archives.
+The VideoCore parts (vchiq.device and videocore.audio), experimental, need an
+Emu68 newer than 1.1.0-beta.1, which has the extensions too, so for those take
+the -rangeops archives.  The video libraries that used to come with them ship
+with Kinora now.
 ")
 
 # Root 'Licenses' summary — one entry per bundled component plus a binary->component
@@ -553,7 +539,7 @@ foreach(_entry IN LISTS EMU68_DOC_COMPONENTS)
     string(APPEND _licenses "\n")
 endforeach()
 string(APPEND _licenses
-"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  Developer/Autodocs/gic400.doc, Developer/FD/gic400_lib.fd -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device          -> emu68-xhci-driver-context\n  xhci-legacy.device   -> emu68-xhci-driver-legacy\n  genet.device      -> emu68-genet-driver-netdev\n  genet-stats       -> emu68-genet-driver-netdev\n  nvme.device       -> emu68-nvme-driver (and its mounter, BSD-2-Clause)\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  vchiq.device      -> emu68-vchiq-library\n  videocodec.library, videocodec/videocore.codec -> emu68-vchiq-library\n  AHI/videocore.audio, AudioModes/VIDEOCORE -> emu68-vchiq-library\n  Classes/DataTypes/vcjpeg.datatype, Storage/DataTypes/VCJPEG -> emu68-vchiq-library\n  VCInfo            -> emu68-vchiq-library\n  Tools/Commodities/VCGrab -> emu68-vchiq-library\n  Developer/Tools/VCTest, Developer/Tools/VPUPlay, Developer/Examples/videocodec -> emu68-vchiq-library\n  videocodec/rpivid.codec -> emu68-rpivid-codec\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
+"Shipped binaries -> component:\n  gic400.library    -> emu68-gic400-library\n  Developer/Autodocs/gic400.doc, Developer/FD/gic400_lib.fd -> emu68-gic400-library\n  bcmpcie.library   -> emu68-pcie-library\n  openpci.library   -> emu68-pcie-library\n  lspci             -> emu68-pcie-library\n  xhci.device          -> emu68-xhci-driver-context\n  xhci-legacy.device   -> emu68-xhci-driver-legacy\n  genet.device      -> emu68-genet-driver-netdev\n  genet-stats       -> emu68-genet-driver-netdev\n  nvme.device       -> emu68-nvme-driver (and its mounter, BSD-2-Clause)\n  nvmeinfo, nvmeadm -> emu68-nvme-driver\n  bsdsocket.library -> lwip-amiga\n  netdev-stats      -> lwip-amiga\n  netinfo           -> lwip-amiga\n  mdns              -> lwip-amiga\n  AddNetInterface, RemoveNetInterface, NetShutdown, arp -> lwip-amiga\n  GetNetStatus, ShowNetStatus -> lwip-amiga\n  ping, traceroute  -> lwip-amiga\n  NetLogViewer      -> lwip-amiga\n  NetSpeed          -> lwip-amiga\n  vchiq.device      -> emu68-vchiq-driver\n  AHI/videocore.audio, AudioModes/VIDEOCORE -> emu68-vchiq-driver\n  VCHIQInfo         -> emu68-vchiq-driver\n  Developer/Tools/VCHIQTest -> emu68-vchiq-driver\n  emu68check        -> emu68-common\n\nemu68-common is the shared support library linked into the above; it also\nships the emu68check capability probe the Install script runs from the\narchive (never copied to C:).\n")
 file(WRITE "${CMAKE_BINARY_DIR}/installer/Licenses" "${_licenses}")
 
 # Per-component documentation copy commands for the package target.  Each component
@@ -609,27 +595,17 @@ add_custom_target(package
     # Storage/ holds what the Install script places only on request:
     #   NetInterfaces/genet - the commented interface sample, copied to
     #     SYS:Storage/NetInterfaces/ with the bundled stack, and to
-    #     DEVS:NetInterfaces/ when a genet.device is installed and none is there;
-    #   DataTypes/VCJPEG - vcjpeg.datatype's descriptor, copied to
-    #     SYS:Storage/DataTypes/ and added from S:User-Startup.
+    #     DEVS:NetInterfaces/ when a genet.device is installed and none is there.
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/Storage" "${PACKAGE_STAGE}/Storage"
-    # Classes/DataTypes/vcjpeg.datatype -> SYS:Classes/DataTypes/
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_INSTALL_PREFIX}/Classes" "${PACKAGE_STAGE}/Classes"
-    # Tools/Commodities/VCGrab and its icon -> SYS:Tools/Commodities/
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_INSTALL_PREFIX}/Tools" "${PACKAGE_STAGE}/Tools"
     # Developer/ as the components install it: test rigs (Developer/Tools),
-    # examples with their source (Developer/Examples), autodocs (Developer/Autodocs)
-    # and FD files (Developer/FD) -- in the archive only, never installed.  The
-    # headers below join it.
+    # autodocs (Developer/Autodocs) and FD files (Developer/FD) -- in the archive
+    # only, never installed.  The headers below join it.
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_INSTALL_PREFIX}/Developer" "${PACKAGE_STAGE}/Developer"
     # Public SDK headers under Developer/include/.  proto/clib/inline/pragmas hold
-    # only the shipped libraries' headers (gic400, bcmpcie, videocodec and its
-    # backend interface; emu68-common's sit at the install/include/ root) -> copy
-    # those four wholesale.  devices/, libraries/ and net/ are enumerated to ship
+    # only the shipped libraries' headers (gic400, bcmpcie; emu68-common's sit at
+    # the install/include/ root) -> copy those four wholesale.  devices/, libraries/ and net/ are enumerated to ship
     # only the curated set:
     #   devices/nvme.h (not nvme_defs.h); devices/netdev.h, the NIC driver ABI - a
     #     third party can write a netdev driver or stack against it (BSD-3-Clause,
@@ -637,7 +613,7 @@ add_custom_target(package
     #     I/O (BSD-3-Clause, exec/ headers only);
     #   the gic400, bcmpcie and openpci library headers, minus pci_constants.h
     #     and pci_ids.h; pci_irq.h, the interrupt attach/detach helpers xhci and
-    #     nvme use; videocodec.h and videocodec_backend.h;
+    #     nvme use;
     #   net/if_arp_ioctl.h, below.
     # None of them includes anything but NDK headers, which keeps emu68-common out
     # entirely (nothing pulls in types.h).
@@ -669,8 +645,6 @@ add_custom_target(package
         "${CMAKE_INSTALL_PREFIX}/include/libraries/openpci.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/pcitags.h"
         "${CMAKE_INSTALL_PREFIX}/include/libraries/pci_irq.h"
-        "${CMAKE_INSTALL_PREFIX}/include/libraries/videocodec.h"
-        "${CMAKE_INSTALL_PREFIX}/include/libraries/videocodec_backend.h"
         "${PACKAGE_STAGE}/Developer/include/libraries/"
     # Copy installer files, then swap in the version-stamped Install/ReadMe (the
     # source tree carries the .in templates; the generated files replace them).

@@ -39,9 +39,10 @@ lwip-amiga stack, which gets you close to gigabit line rate. The Ethernet
 driver is the same either way: genet.device serves every stack. USB is a
 separate, independent question: it depends only on which USB stack you run.
 
-The VideoCore parts (video, JPEG pictures, sound) and rpivid.codec (H.265 on
-the HEVC block of a Pi 4 or CM4) need an Emu68 newer than 1.1.0-beta.1, which
-has the extensions too, so for those take the '-rangeops' archive.
+The VideoCore parts (vchiq.device and videocore.audio) need an Emu68 newer
+than 1.1.0-beta.1, which has the extensions too, so for those take the
+'-rangeops' archive. The video libraries that came with them up to 2.3 ship
+with Kinora now.
 
 The installer asks two separate questions - whether to install genet.device,
 and which TCP/IP stack. They are independent: genet.device works with either,
@@ -224,54 +225,27 @@ nvmeinfo, nvmeadm (C:)
   lists the drives and their namespaces; nvmeadm reports SMART/health data,
   log pages, self-test results and firmware information.
 
-vchiq.device, videocodec.library @VCHIQ_VERSION@ (DEVS:, LIBS:) [experimental]
-  Hardware video and pictures through the Pi's VideoCore chip: it decodes
-  H.264 and MJPEG video and JPEG, PNG, GIF, BMP, TGA and PPM pictures,
-  encodes H.264 and JPEG, and scales and converts pictures, while the 68k
-  stays almost idle. Programs open videocodec.library, which drives the VideoCore through
-  its codec driver LIBS:videocodec/videocore.codec; that one reaches the
-  firmware through vchiq.device. It needs settings in the Pi's config.txt
-  (see AFTER INSTALLATION), and the installer leaves it unticked. What works
-  and what does not yet: Documentation/emu68-vchiq-library/README.md.
+vchiq.device @VCHIQ_VERSION@ (DEVS:) [experimental]
+  The link to the Pi's VideoCore chip: its firmware's services as Exec I/O,
+  for videocore.audio here and for the video libraries that come with
+  Kinora (videocodec.library and its codecs, vcjpeg.datatype, VCGrab:
+  https://github.com/rondoval/kinora). It needs the cma overlay in the Pi's
+  config.txt (see AFTER INSTALLATION), and the installer leaves it
+  unticked. Documentation/emu68-vchiq-driver/README.md has the details.
 
-rpivid.codec @RPIVID_VERSION@ (LIBS:videocodec/) [experimental]
-  Installed with videocodec.library. A second codec driver: H.265 (HEVC)
-  video decoded by the HEVC block of a Pi 4 or CM4 and shown through the
-  VideoCore, so a program that plays video through videocodec.library
-  plays H.265 too: 8-bit H.265 up to 4096x2304, 4K at 30 fps full screen,
-  and 10-bit up to 1080p, shown at 8 bits. On a Pi 3, which has no HEVC
-  block, it offers no codec and H.265 videos fail to open (error -3).
-  Documentation/emu68-rpivid-codec/README.md has the details.
-
-VCGrab (SYS:Tools/Commodities)
-  Installed with videocodec.library. A commodity that records an RTG screen
-  to an MKV file on hot keys and grabs stills, the VideoCore doing the work.
-  Double-click its icon for the settings window; a copy in WBStartup starts
-  it at boot. From the shell, with its full name, it records one file or
-  grabs one still. No sound or mouse pointer:
-  Documentation/emu68-vchiq-library/README.md.
-
-VCInfo (C:)
-  Installed with videocodec.library. VCInfo checks the setup and says what
-  to fix ('VCInfo'), and lists what the hardware can do ('VCInfo CODECS').
+VCHIQInfo (C:)
+  Installed with vchiq.device. VCHIQInfo checks the link - Emu68, the
+  cma overlay, vchiq.device, the firmware, its temperature, throttling and
+  gpu_mem - and says what to fix. Kinora's VCInfo checks the video
+  libraries and sends you here when the VideoCore does not answer.
 
 videocore.audio @VCHIQ_VERSION@ (DEVS:AHI, DEVS:AudioModes) [experimental]
   An AHI driver: every AHI program plays through the VideoCore to HDMI0,
   HDMI1 or the Pi's headphone jack, at 8000 to 48000 Hz: three modes
   (16-bit, HiFi, and 7.1 for an AV receiver on HDMI with AHI 6), the
   output chosen per unit in the AHI preferences. It needs AHI and
-  vchiq.device, which the installer brings along with VCInfo, and only the
+  vchiq.device, which the installer brings along with VCHIQInfo, and only the
   cma overlay, not gpu_mem. Its latency is about 40 ms; it does not record.
-
-vcjpeg.datatype @VCHIQ_VERSION@ (SYS:Classes/DataTypes) [experimental]
-  JPEG pictures through the VideoCore, for every program that loads
-  pictures through datatypes (MultiView, Workbench, browsers). It takes
-  baseline JPEGs of about 2 megapixels and more (twice as fast as software
-  from 5 megapixels); smaller, progressive and CMYK ones stay with your
-  JPEG datatype, as does any picture the VideoCore cannot decode. Its
-  descriptor (SYS:Storage/DataTypes/VCJPEG) is added from S:User-Startup,
-  after the system's: remove that line to go back. It brings videocodec
-  along.
 
 openpci.library @OPENPCI_VERSION@ (LIBS:)
   The openpci API for programs that list PCI devices through it, such as
@@ -289,9 +263,8 @@ lspci (C:)
 
 Developer/ (in the archive, never installed)
   For programmers: the headers of the libraries and devices here (include),
-  gic400.library's autodoc and FD file (Autodocs, FD), a minimal video player
-  and picture viewer with their sources (Examples/videocodec), and the test
-  tools VCTest and VPUPlay (Tools).
+  gic400.library's autodoc and FD file (Autodocs, FD), and the test tool
+  VCHIQTest (Tools).
 
 
 INSTALLATION
@@ -309,16 +282,16 @@ when it is there or no stack is, else your own stack stays. On a
 Poseidon 4.x machine whose xhci.device is still the 5.x driver, installing the
 6.x xhci.device replaces it; the installer asks first.
 
-Then pick the other components from a checklist (videocodec, the VideoCore
-video support, videocore.audio, its sound, and vcjpeg.datatype, its
-pictures, are experimental and unticked). Tools come with what they serve:
-nvmeinfo and nvmeadm with nvme.device, lspci with bcmpcie.library. The
-installer pulls in the libraries the drivers need automatically, so you
-cannot end up with a driver whose library is missing; in Expert mode the
-checklist also offers gic400.library and bcmpcie.library on their own. The
-VideoCore parts start ticked once they are installed, so an upgrade replaces
-them. The last screen before anything is copied lists what will be installed;
-Abort there leaves your system as it was.
+Then pick the other components from a checklist (vchiq.device, the VideoCore
+link, and videocore.audio, its sound, are experimental and unticked). Tools
+come with what they serve: nvmeinfo and nvmeadm with nvme.device, lspci with
+bcmpcie.library, VCHIQInfo with vchiq.device. The installer pulls in the
+libraries the drivers need automatically, so you cannot end up with a driver
+whose library is missing; in Expert mode the checklist also offers
+gic400.library and bcmpcie.library on their own. The VideoCore parts start
+ticked once they are installed, so an upgrade replaces them. The last screen
+before anything is copied lists what will be installed; Abort there leaves
+your system as it was.
 
 In Novice mode the installer asks only before replacing something it should
 not replace unasked: it keeps what the machine has, takes the default answers
@@ -406,16 +379,15 @@ full set is:
   nvme       nvmeinfo lists the NVMe drives and namespaces that were found;
              nvmeadm reports SMART/health data and log pages.
 
-  videocodec Add dtoverlay=cma (the memory vchiq.device shares with the
-             VideoCore) to config.txt on the Pi's boot partition, and
-             gpu_mem=128 (memory for the VideoCore's codecs) for pictures
-             over 24 megapixels, two videos at once and a video during a
-             recording: the default of 76 plays one 1080p video or records
-             a 1080p screen. Add dtoverlay=videocore,mem=32 for
-             full-screen video at 24 or 32 bits. Emu68 reads config.txt
+  vchiq.device
+             Add dtoverlay=cma (the memory vchiq.device shares with the
+             VideoCore: 336 KiB of it, so size=2, the smallest zone Emu68
+             makes, is enough, and so is the default of 4 MiB) to
+             config.txt on the Pi's boot partition. Emu68 reads config.txt
              only when the Pi starts, so then press Ctrl-Amiga-Amiga or
-             power-cycle. 'VCInfo' then checks the setup, says what to fix,
-             and ends with PASS.
+             power-cycle. 'VCHIQInfo' then checks the link, says what to
+             fix, and ends with PASS. The video libraries' settings
+             (gpu_mem, the graphics card's memory) are in Kinora's ReadMe.
 
   videocore.audio
              Reboot (or run 'AddAudioModes REFRESH'), then pick a
@@ -423,10 +395,6 @@ full set is:
              jack) for a unit in the AHI preferences. If an HDMI display
              stays silent, the Pi drives it as DVI: add hdmi_drive=2 to
              config.txt and press Ctrl-Amiga-Amiga.
-
-  vcjpeg.datatype
-             Reboot: the line in S:User-Startup adds the descriptor. It
-             needs the videocodec settings above.
 
   gic400     Nothing to do. If your Emu68 supplies gic400.library from its own
              ROM, that copy is already in memory at boot and the drivers use
@@ -445,16 +413,9 @@ REQUIREMENTS
     third-party stack such as Roadshow, AmiTCP or Miami. The bundled stack
     needs no genet at all if you connect through an Ethernet-type SANA-II
     card or USB adapter
-  - Video (videocodec.library): Emu68 newer than 1.1.0-beta.1 with the cma
-    overlay, gpu_mem=128 for pictures over 24 megapixels, two videos at
-    once and a video during a recording, and Picasso96 with an RTG screen for
-    the players
-  - Sound (videocore.audio): AHI 4 or 6, Emu68 newer than 1.1.0-beta.1 with
+  - The VideoCore link (vchiq.device): Emu68 newer than 1.1.0-beta.1 with
     the cma overlay
-  - Pictures (vcjpeg.datatype): AmigaOS 3.2 (picture.datatype 47), and what
-    videocodec.library needs
-  - H.265 (rpivid.codec): a Pi 4 or CM4, and what videocodec.library
-    needs
+  - Sound (videocore.audio): AHI 4 or 6, and what vchiq.device needs
 
 
 SOURCE CODE
@@ -468,9 +429,7 @@ LICENSE
 
 Each component is covered by its own license: GPL-2.0, MPL-2.0/GPL-2.0+, and
 BSD-3-Clause for lwip-amiga (bsdsocket.library and the networking tools) and
-emu68-vchiq-library (vchiq.device, videocodec.library, videocore.audio,
-vcjpeg.datatype and the video tools). emu68-rpivid-codec (rpivid.codec and
-its tools) is GPL-2.0, with code from the Linux kernel's HEVC driver.
+emu68-vchiq-driver (vchiq.device, videocore.audio and VCHIQInfo).
 nvme.device (GPL-2.0) contains the mounter, which is under the BSD-2-Clause
 license: its notice is Documentation/emu68-nvme-driver/LICENSE-mounter.
 A summary is in the 'Licenses' file at the top of this archive; the full text

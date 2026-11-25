@@ -4,7 +4,7 @@ AmigaOS drivers that let your Amiga use the hardware of the Raspberry Pi 4 or
 Compute Module 4 it is running on. If you have a PiStorm with Emu68, this
 package gives you USB, Gigabit Ethernet with a TCP/IP stack, and NVMe solid-state
 storage — as ordinary Amiga libraries and devices, driven from AmigaOS 3.x — and,
-as an experiment, hardware video, JPEG pictures and sound on the Pi's VideoCore.
+as an experiment, the link to the Pi's VideoCore and sound through it.
 
 > **Upgrading from 2.0?** Two things can change how your machine comes up.
 > Network interfaces are no longer configured in `ENVARC:netstack.prefs` — each
@@ -33,12 +33,11 @@ as an experiment, hardware video, JPEG pictures and sound on the Pi's VideoCore.
   `NetLogViewer` commodity and the `NetSpeed` throughput monitor.
 - **Storage** — `nvme.device` drives an NVMe SSD attached to the PCIe slot, with
   the `nvmeinfo` and `nvmeadm` tools for health and SMART data.
-- **VideoCore (experimental)** — `videocodec.library` decodes H.264 and MJPEG
-  video and pictures and encodes H.264 and JPEG while the 68k stays almost idle;
-  with `rpivid.codec` it decodes H.265 too, 4K included, on the HEVC block of a
-  Pi 4 or CM4. `vcjpeg.datatype` speeds up JPEG pictures in every program, `videocore.audio`
-  plays AHI sound to HDMI or the headphone jack, and `VCGrab` records an RTG screen
-  to an MKV file. `VCInfo` checks the setup. The installer leaves these unticked.
+- **VideoCore (experimental)** — `vchiq.device` is the link to the Pi's VideoCore
+  firmware, `videocore.audio` plays AHI sound through it to HDMI or the headphone
+  jack, and `VCHIQInfo` checks the link. The installer leaves these unticked. The
+  video libraries on the same link (`videocodec.library` with H.264 and H.265,
+  `vcjpeg.datatype`, `VCGrab`) come with [Kinora](https://github.com/rondoval/kinora).
 - **Supporting libraries** — `gic400.library` and `bcmpcie.library`, which the
   drivers need and the installer brings along, with the `lspci` tool, and
   `openpci.library` for programs such as `identify.library`.
@@ -52,9 +51,9 @@ as an experiment, hardware video, JPEG pictures and sound on the Pi's VideoCore.
   *What to download and install* below)
 - For networking: either the bundled lwip-amiga stack or a third-party one such
   as Roadshow, AmiTCP or Miami; `genet.device` works with either
-- For the VideoCore parts: an Emu68 newer than 1.1.0-beta.1 with the `cma` overlay;
-  `vcjpeg.datatype` needs AmigaOS 3.2 and `videocore.audio` needs AHI. The archive's
-  `ReadMe` has the settings
+- For the VideoCore parts: an Emu68 newer than 1.1.0-beta.1 with the `cma` overlay
+  (`vchiq.device` keeps 336 KiB there: the smallest zone, `size=2`, is enough);
+  `videocore.audio` needs AHI. The archive's `ReadMe` has the settings
 
 ## What to download and install
 
@@ -73,7 +72,7 @@ lwip-amiga stack, which gets you close to gigabit line rate. The Ethernet driver
 is the same either way: `genet.device` serves every stack. USB is a separate,
 independent question: it depends only on which USB stack you run.
 
-The VideoCore parts (video, JPEG pictures, sound) need an Emu68 newer than
+The VideoCore parts (`vchiq.device` and its sound) need an Emu68 newer than
 1.1.0-beta.1, which has the extensions too, so for those take the `-rangeops`
 archive.
 
@@ -157,8 +156,7 @@ each version.
 
 Each component is covered by its own licence: GPL-2.0, MPL-2.0/GPL-2.0+, and
 BSD-3-Clause for `lwip-amiga` (the TCP/IP stack, `bsdsocket.library` and the
-networking tools) and `emu68-vchiq-library` (the VideoCore parts); `emu68-rpivid-codec`
-(the H.265 backend) is GPL-2.0, as it carries the Linux driver's command generator. The per-file
+networking tools) and `emu68-vchiq-driver` (the VideoCore parts). The per-file
 SPDX headers in the sources are authoritative, and the `Licenses` file in the archive maps every shipped binary to its licence.
 
 ## For developers
